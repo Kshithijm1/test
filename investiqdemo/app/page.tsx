@@ -77,7 +77,31 @@ export default function Home() {
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const sqlDataRef = useRef<Record<string, any>[]>([]);
+    const chartConfigRef = useRef<any>(null);
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
+
+    // Build chart only when BOTH sql_data and chart config are available
+    const tryBuildChart = useCallback(() => {
+        const config = chartConfigRef.current;
+        const rows = sqlDataRef.current;
+        if (!config || rows.length === 0) return;
+
+        console.log("[tryBuildChart] Building chart with", rows.length, "rows");
+        const { data: traces, layout } = buildPlotlyChart(config.config, rows);
+        const graphType = config.graphType || "LineGraph";
+        const payload = { data: traces, layout, title: config.config.update_layout_title };
+
+        if (graphType === "ScatterPlot") {
+            setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
+        } else if (graphType === "BarGraph") {
+            setDisplayBox((prev) => [...prev, BarGraph.fromData(payload)]);
+        } else {
+            setDisplayBox((prev) => [...prev, LineGraph.fromData(payload)]);
+        }
+
+        // Clear refs so we don't rebuild on next call
+        chartConfigRef.current = null;
+    }, []);
 
 
     // ── Backend health poll ───────────────────────────────────────────────────
@@ -98,18 +122,10 @@ export default function Home() {
 
     const toolHandlers = useCallback((module: any) => {
         if (module.type === "chart" && module.config) {
-            // Combine chart config from display agent with stored SQL data
-            const { data: traces, layout } = buildPlotlyChart(module.config, sqlDataRef.current);
-            const graphType = module.graphType || "LineGraph";
-            const payload = { data: traces, layout, title: module.config.update_layout_title };
-
-            if (graphType === "ScatterPlot") {
-                setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
-            } else if (graphType === "BarGraph") {
-                setDisplayBox((prev) => [...prev, BarGraph.fromData(payload)]);
-            } else {
-                setDisplayBox((prev) => [...prev, LineGraph.fromData(payload)]);
-            }
+            // Store chart config and try to build
+            console.log("[toolHandlers] Received chart config, storing...");
+            chartConfigRef.current = module;
+            tryBuildChart();
         } else {
             // Old format: pre-built Plotly traces
             const payload = { data: module.data, layout: module.layout, title: module.title };
@@ -123,7 +139,7 @@ export default function Home() {
                 console.warn(`No handler for module type: "${module.type}"`);
             }
         }
-    }, []);
+    }, [tryBuildChart]);
 
 
     // ── Submit handler ────────────────────────────────────────────────────────
@@ -163,6 +179,7 @@ export default function Home() {
                 onSqlData: (payload) => {
                     console.log("[page] Received SQL data:", payload.data?.length, "rows");
                     sqlDataRef.current = payload.data || [];
+                    tryBuildChart(); // Try to build if chart config already arrived
                 },
 
                 onThinking: (text) => {
