@@ -41,8 +41,10 @@ def researcher_agent(state: AgentState) -> AgentState:
         sql_result = generate_sql_tool.invoke({"query": user_msg})
         log.info(f"[RESEARCHER] SQL generated: {sql_result[:200]}...")
 
-        lines = sql_result.strip().split('\n')
-        clean_sql = '\n'.join(lines[1:]) if sql_result.startswith("--") else sql_result
+        # Extract the actual SELECT statement, skipping any validation error/metadata lines
+        import re
+        select_match = re.search(r'(SELECT\s.+)', sql_result, re.DOTALL | re.IGNORECASE)
+        clean_sql = select_match.group(1).strip() if select_match else sql_result.strip()
 
         log.info(f"[RESEARCHER] SQL Query to Execute:\n{clean_sql}")
         log.info("[RESEARCHER] Step 2: Executing BigQuery...")
