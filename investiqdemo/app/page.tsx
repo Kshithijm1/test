@@ -16,16 +16,6 @@ import { parseStream, DisplayModule } from "./hooks/useStreamParser";
 /**
  * Build Plotly traces + layout from the display agent's chart config and raw SQL data rows.
  */
-// Professional financial color palette
-const CHART_COLORS = [
-	"#2563eb", // blue
-	"#dc2626", // red
-	"#059669", // emerald
-	"#d97706", // amber
-	"#7c3aed", // violet
-	"#0891b2", // cyan
-];
-
 function buildPlotlyChart(
 	config: any,
 	sqlRows: Record<string, any>[]
@@ -43,18 +33,7 @@ function buildPlotlyChart(
 		type: "scatter" as const,
 		mode,
 		name: names[i] || yCol,
-		line: {
-			color: CHART_COLORS[i % CHART_COLORS.length],
-			width: 2.5,
-			shape: "spline" as const,
-		},
-		marker: {
-			color: CHART_COLORS[i % CHART_COLORS.length],
-			size: 6,
-			symbol: "circle",
-			line: { color: "#fff", width: 1.5 },
-		},
-		hovertemplate: `<b>%{fullData.name}</b><br>%{x}<br>%{y:,.2f}<extra></extra>`,
+		connectgaps: true,
 	}));
 
 	const yAxisTitle = Array.isArray(config.update_yaxis_title_text)
