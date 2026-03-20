@@ -68,6 +68,9 @@ def display_agent(state: AgentState) -> AgentState:
         )
 
         # Parse the JSON response (your exact logic: json.loads(response.text))
+        log.debug(f"[DISPLAY] Raw response type: {type(response)}")
+        log.debug(f"[DISPLAY] Raw response content: {response.content[:500]}")
+        
         chart_config = json.loads(response.content)
 
         if "error" in chart_config:
