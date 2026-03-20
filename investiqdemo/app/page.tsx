@@ -16,35 +16,46 @@ import { parseStream, DisplayModule } from "./hooks/useStreamParser";
 /**
  * Build Plotly traces + layout from the display agent's chart config and raw SQL data rows.
  */
+// Professional financial color palette
+const CHART_COLORS = [
+	"#2563eb", // blue
+	"#dc2626", // red
+	"#059669", // emerald
+	"#d97706", // amber
+	"#7c3aed", // violet
+	"#0891b2", // cyan
+];
+
 function buildPlotlyChart(
 	config: any,
 	sqlRows: Record<string, any>[]
 ): { data: any[]; layout: any } {
-	console.log("[buildPlotlyChart] Config:", config);
-	console.log("[buildPlotlyChart] SQL rows sample:", sqlRows[0]);
-	console.log("[buildPlotlyChart] SQL rows count:", sqlRows.length);
-
 	const xCol = config.x;
 	const yCols = Array.isArray(config.y) ? config.y : [config.y];
 	const names = Array.isArray(config.name) ? config.name : [config.name];
 	const mode = config.mode || "lines+markers";
 
 	const xValues = sqlRows.map((row) => row[xCol]);
-	console.log("[buildPlotlyChart] X values:", xValues);
 
-	const traces = yCols.map((yCol: string, i: number) => {
-		const yValues = sqlRows.map((row) => row[yCol]);
-		console.log(`[buildPlotlyChart] Y values for ${yCol}:`, yValues);
-		return {
-			x: xValues,
-			y: yValues,
-			type: "scatter" as const,
-			mode,
-			name: names[i] || yCol,
-		};
-	});
-
-	console.log("[buildPlotlyChart] Final traces:", traces);
+	const traces = yCols.map((yCol: string, i: number) => ({
+		x: xValues,
+		y: sqlRows.map((row) => row[yCol]),
+		type: "scatter" as const,
+		mode,
+		name: names[i] || yCol,
+		line: {
+			color: CHART_COLORS[i % CHART_COLORS.length],
+			width: 2.5,
+			shape: "spline" as const,
+		},
+		marker: {
+			color: CHART_COLORS[i % CHART_COLORS.length],
+			size: 6,
+			symbol: "circle",
+			line: { color: "#fff", width: 1.5 },
+		},
+		hovertemplate: `<b>%{fullData.name}</b><br>%{x}<br>%{y:,.2f}<extra></extra>`,
+	}));
 
 	const yAxisTitle = Array.isArray(config.update_yaxis_title_text)
 		? config.update_yaxis_title_text[0]
@@ -366,7 +377,7 @@ export default function Home() {
                 {/* Left: Chat Panel */}
                 <Box
                     sx={{
-                        width: "380px",
+                        width: "520px",
                         flexShrink: 0,
                         display: "flex",
                         flexDirection: "column",

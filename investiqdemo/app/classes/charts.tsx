@@ -23,48 +23,79 @@ export function PlotlyChart({ data, layout }: { data: any[]; layout: any }) {
 			const mergedLayout = {
 				...safeLayout,
 				autosize: true,
-				height: 400,
-				paper_bgcolor: "rgba(0,0,0,0)",
-				plot_bgcolor: "rgba(0,0,0,0)",
-				margin: { t: 80, r: 30, b: 60, l: 70 },
-				font: { family: "Inter, sans-serif", size: 12 },
+				height: 480,
+				paper_bgcolor: "#ffffff",
+				plot_bgcolor: "#fafbfd",
+				margin: { t: 64, r: 40, b: 72, l: 80 },
+				font: { family: "'Inter', 'Segoe UI', system-ui, sans-serif", size: 12, color: "#4a5568" },
 				title: safeLayout.title
 					? {
 							text:
 								typeof safeLayout.title === "string"
 									? safeLayout.title
 									: safeLayout.title.text,
-							font: { size: 15, color: "#1a1a2e", weight: 600 },
-							x: 0.05,
+							font: { size: 16, color: "#1a202c", family: "'Inter', 'Segoe UI', system-ui, sans-serif" },
+							x: 0.02,
+							xanchor: "left",
+							y: 0.98,
 						}
 					: undefined,
+				legend: {
+					orientation: "h" as const,
+					yanchor: "bottom",
+					y: 1.04,
+					xanchor: "left",
+					x: 0,
+					font: { size: 12, color: "#4a5568" },
+					bgcolor: "rgba(0,0,0,0)",
+					borderwidth: 0,
+					itemsizing: "constant",
+				},
+				hovermode: "x unified" as const,
+				hoverlabel: {
+					bgcolor: "#1a202c",
+					font: { color: "#fff", size: 12, family: "'Inter', sans-serif" },
+					bordercolor: "transparent",
+				},
 				xaxis: {
 					...(safeLayout.xaxis ?? {}),
 					...(hasDateX && {
 						type: "date",
-						tickformat: "%b %d '%y",
-						tickangle: -30,
-						nticks: 10,
-						showgrid: true,
-						gridcolor: "#e3eaf5",
+						tickformat: "%b '%y",
+						dtick: "M3",
+						tickangle: 0,
 					}),
+					showgrid: false,
+					showline: true,
+					linecolor: "#e2e8f0",
+					linewidth: 1,
+					tickfont: { size: 11, color: "#718096" },
 					title: {
 						text:
 							safeLayout.xaxis?.title?.text ?? safeLayout.xaxis?.title ?? "",
-						font: { size: 12, color: "#64748b" },
-						standoff: 12,
+						font: { size: 12, color: "#4a5568" },
+						standoff: 16,
 					},
+					zeroline: false,
 				},
 				yaxis: {
 					showgrid: true,
-					gridcolor: "#e3eaf5",
+					gridcolor: "#edf2f7",
+					gridwidth: 1,
+					griddash: "dot" as const,
+					showline: false,
+					tickfont: { size: 11, color: "#718096" },
+					tickformat: ",.0f",
 					...(safeLayout.yaxis ?? {}),
 					title: {
 						text:
 							safeLayout.yaxis?.title?.text ?? safeLayout.yaxis?.title ?? "",
-						font: { size: 12, color: "#64748b" },
-						standoff: 12,
+						font: { size: 12, color: "#4a5568" },
+						standoff: 16,
 					},
+					zeroline: true,
+					zerolinecolor: "#cbd5e0",
+					zerolinewidth: 1,
 				},
 			};
 
