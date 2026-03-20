@@ -112,7 +112,7 @@ Use case1:
 - Example user query: Show me NVIDIA Total Revenues over 10 years.
 - Sample SQL output:
     SELECT filingDate, companyName, string_agg(distinct unitTypeName) as Scale,
-    AVG(CASE WHEN dataItemValue = 'Total Revenues' THEN collectionDataItemValue END) AS total_revenues
+    AVG(CASE WHEN dataItemValue LIKE '%Total Revenue%' THEN collectionDataItemValue END) AS total_revenues
     FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
     left join `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg on f.companyId = bbg.companyId
     where filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 YEAR)
@@ -154,10 +154,11 @@ Use case3:
 
 REASONING = """
 Follow this reasoning process:
-1. Understand user's intent.
-2. Identify relevant datasets, tables and fields.
-3. Construct a valid bigquery SQL query.
-4. Ensure the query is efficient and leverage filters, partitioning, clustering etc. when possible.
+1. Understand user's intent and identify the specific financial metric needed.
+2. Identify relevant datasets, tables and fields from the schema.
+3. When filtering dataItemValue, use LIKE '%keyword%' for flexible matching to handle variations in column naming.
+4. Construct a valid BigQuery SQL query with proper aggregation (AVG, SUM) and GROUP BY.
+5. Ensure the query is efficient and leverage filters, partitioning, clustering etc. when possible.
 """
 
 STOPS = """
