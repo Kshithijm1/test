@@ -108,6 +108,8 @@ Task: {TASK}
 
 Context: {CONTEXT}
 
+{OUTPUT_EXAMPLES}
+
 Reasoning: {REASONING}
 
 Stopping Criteria: {STOPS}

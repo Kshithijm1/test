@@ -16,17 +16,26 @@ export interface DisplayModule {
 	title?: string; // ← add this
 }
 
+export interface SqlDataChunk {
+	type: "sql_data";
+	data: {
+		query: string;
+		data: Record<string, any>[];
+	};
+}
+
 export interface DisplayChunk {
 	type: "display_modules";
 	data: DisplayModule[];
 }
 
-export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk;
+export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk | SqlDataChunk;
 
 export interface StreamHandlers {
 	onThinking: (text: string) => void;
 	onResponse: (text: string) => void;
 	onDisplay: (modules: DisplayModule[]) => void;
+	onSqlData?: (payload: { query: string; data: Record<string, any>[] }) => void;
 }
 
 /**
@@ -51,6 +60,9 @@ export async function parseStream(
 			handlers.onThinking(parsed.data);
 		} else if (parsed.type === "response_content") {
 			handlers.onResponse(parsed.data);
+		} else if (parsed.type === "sql_data") {
+			console.log("[useStreamParser] Received sql_data:", (parsed as SqlDataChunk).data.data?.length, "rows");
+			handlers.onSqlData?.((parsed as SqlDataChunk).data);
 		} else if (parsed.type === "display_modules") {
 			console.log("[useStreamParser] Received display modules:", parsed.data);
 			handlers.onDisplay(parsed.data);

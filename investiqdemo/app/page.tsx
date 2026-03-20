@@ -13,6 +13,42 @@ import {
 import { parseStream, DisplayModule } from "./hooks/useStreamParser";
 
 
+/**
+ * Build Plotly traces + layout from the display agent's chart config and raw SQL data rows.
+ */
+function buildPlotlyChart(
+	config: any,
+	sqlRows: Record<string, any>[]
+): { data: any[]; layout: any } {
+	const xCol = config.x;
+	const yCols = Array.isArray(config.y) ? config.y : [config.y];
+	const names = Array.isArray(config.name) ? config.name : [config.name];
+	const mode = config.mode || "lines+markers";
+
+	const xValues = sqlRows.map((row) => row[xCol]);
+
+	const traces = yCols.map((yCol: string, i: number) => ({
+		x: xValues,
+		y: sqlRows.map((row) => row[yCol]),
+		type: "scatter" as const,
+		mode,
+		name: names[i] || yCol,
+	}));
+
+	const yAxisTitle = Array.isArray(config.update_yaxis_title_text)
+		? config.update_yaxis_title_text[0]
+		: config.update_yaxis_title_text || "";
+
+	const layout = {
+		title: config.update_layout_title || "",
+		xaxis: { title: config.update_xaxis_title_text || "" },
+		yaxis: { title: yAxisTitle },
+	};
+
+	return { data: traces, layout };
+}
+
+
 export interface ChatMessage {
     type: "user" | "bot" | "thinking";
     text: string;
@@ -29,6 +65,7 @@ export default function Home() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [pendingSqlData, setPendingSqlData] = useState<Record<string, any>[]>([]);
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
 
 
@@ -48,22 +85,43 @@ export default function Home() {
     }, []);
 
 
-    const toolHandlers = useCallback((module: DisplayModule) => {
-        const payload = {
-            data: module.data,
-            layout: module.layout,
-            title: module.title,
-        };
+    const toolHandlers = useCallback((module: any) => {
+        // module comes from display_modules event
+        // It could be the old format (pre-built traces) or new format (chart config + type)
+        if (module.type === "chart" && module.config) {
+            // New format: chart config from display agent — combine with stored SQL data
+            setPendingSqlData((currentSqlData: Record<string, any>[]) => {
+                const { data: traces, layout } = buildPlotlyChart(module.config, currentSqlData);
+                const graphType = module.graphType || "LineGraph";
+                const payload = { data: traces, layout, title: module.config.update_layout_title };
 
-
-        if (module.type === "LineGraph") {
-            setDisplayBox((prev) => [...prev, LineGraph.fromData(payload)]);
-        } else if (module.type === "BarGraph") {
-            setDisplayBox((prev) => [...prev, BarGraph.fromData(payload)]);
-        } else if (module.type === "ScatterPlot") {
-            setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
+                if (graphType === "LineGraph") {
+                    setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
+                } else if (graphType === "BarGraph") {
+                    setDisplayBox((prev: ChartData[]) => [...prev, BarGraph.fromData(payload)]);
+                } else if (graphType === "ScatterPlot") {
+                    setDisplayBox((prev: ChartData[]) => [...prev, ScatterPlotGraph.fromData(payload)]);
+                } else {
+                    setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
+                }
+                return currentSqlData; // don't clear — keep for potential re-use
+            });
         } else {
-            console.warn(`No handler for module type: "${(module as any).type}"`);
+            // Old format: pre-built Plotly traces
+            const payload = {
+                data: module.data,
+                layout: module.layout,
+                title: module.title,
+            };
+            if (module.type === "LineGraph") {
+                setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
+            } else if (module.type === "BarGraph") {
+                setDisplayBox((prev: ChartData[]) => [...prev, BarGraph.fromData(payload)]);
+            } else if (module.type === "ScatterPlot") {
+                setDisplayBox((prev: ChartData[]) => [...prev, ScatterPlotGraph.fromData(payload)]);
+            } else {
+                console.warn(`No handler for module type: "${module.type}"`);
+            }
         }
     }, []);
 
@@ -102,6 +160,11 @@ export default function Home() {
 
 
             await parseStream(response, {
+                onSqlData: (payload) => {
+                    console.log("[page] Received SQL data:", payload.data?.length, "rows");
+                    setPendingSqlData(payload.data || []);
+                },
+
                 onThinking: (text) => {
                     setChatMessages((prev) => {
                         const updated = [...prev];
