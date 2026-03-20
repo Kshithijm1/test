@@ -66,9 +66,13 @@ def researcher_agent(state: AgentState) -> AgentState:
         data_fetched_status = len(data_rows) > 0
         log.info(f"[RESEARCHER] ✓ Done in {elapsed:.2f}s | {len(data_rows)} data rows | data_fetched={data_fetched_status}")
 
+        # Send full data to frontend for graph reconstruction
+        from utils.helpers import emit
+        data_chunk = emit("sql_data", {"query": clean_sql, "data": data_rows})
+
         return {
             "messages": [],
-            "stream_chunks": [],
+            "stream_chunks": [data_chunk],
             "data_fetched": data_fetched_status,
             "SQLQuery": clean_sql,
             "SQLData": execution_result,

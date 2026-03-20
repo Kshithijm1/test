@@ -32,7 +32,7 @@ def display_agent(state: AgentState) -> AgentState:
     try:
         parsed_data = json.loads(sql_data)
         if isinstance(parsed_data, list):
-            samples = parsed_data[:20]  # Use first 20 rows like your original code
+            samples = parsed_data[:50]  # Use first 50 rows for inference
         else:
             samples = []
     except json.JSONDecodeError:
@@ -103,9 +103,16 @@ def display_agent(state: AgentState) -> AgentState:
         log.info(f"[DISPLAY] ✓ Generated {graph_type} (use case {chart_config.get('usecase')}) in {time.time() - t0:.2f}s")
         log.debug(f"[DISPLAY] Config: {visualization_json}")
 
+        # Send only chart config to frontend (no data)
+        display_payload = {
+            "type": "chart",
+            "graphType": graph_type,
+            "config": chart_config
+        }
+
         return {
             "messages": [],
-            "display_results": [chart_config],
+            "display_results": [display_payload],
             "stream_chunks": [],
             "GraphType": graph_type,
             "VisualizationJSON": visualization_json,
