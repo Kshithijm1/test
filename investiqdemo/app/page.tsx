@@ -20,20 +20,31 @@ function buildPlotlyChart(
 	config: any,
 	sqlRows: Record<string, any>[]
 ): { data: any[]; layout: any } {
+	console.log("[buildPlotlyChart] Config:", config);
+	console.log("[buildPlotlyChart] SQL rows sample:", sqlRows[0]);
+	console.log("[buildPlotlyChart] SQL rows count:", sqlRows.length);
+
 	const xCol = config.x;
 	const yCols = Array.isArray(config.y) ? config.y : [config.y];
 	const names = Array.isArray(config.name) ? config.name : [config.name];
 	const mode = config.mode || "lines+markers";
 
 	const xValues = sqlRows.map((row) => row[xCol]);
+	console.log("[buildPlotlyChart] X values:", xValues);
 
-	const traces = yCols.map((yCol: string, i: number) => ({
-		x: xValues,
-		y: sqlRows.map((row) => row[yCol]),
-		type: "scatter" as const,
-		mode,
-		name: names[i] || yCol,
-	}));
+	const traces = yCols.map((yCol: string, i: number) => {
+		const yValues = sqlRows.map((row) => row[yCol]);
+		console.log(`[buildPlotlyChart] Y values for ${yCol}:`, yValues);
+		return {
+			x: xValues,
+			y: yValues,
+			type: "scatter" as const,
+			mode,
+			name: names[i] || yCol,
+		};
+	});
+
+	console.log("[buildPlotlyChart] Final traces:", traces);
 
 	const yAxisTitle = Array.isArray(config.update_yaxis_title_text)
 		? config.update_yaxis_title_text[0]
