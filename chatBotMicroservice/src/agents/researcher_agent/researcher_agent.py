@@ -44,6 +44,7 @@ def researcher_agent(state: AgentState) -> AgentState:
         lines = sql_result.strip().split('\n')
         clean_sql = '\n'.join(lines[1:]) if sql_result.startswith("--") else sql_result
 
+        log.info(f"[RESEARCHER] SQL Query to Execute:\n{clean_sql}")
         log.info("[RESEARCHER] Step 2: Executing BigQuery...")
         execution_result = execute_bigquery_tool.invoke({"sql_query": clean_sql, "limit": 100})
         log.debug(f"[RESEARCHER] Execution result: {execution_result[:300]}...")
