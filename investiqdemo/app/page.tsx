@@ -2,7 +2,7 @@
 import { Box } from "@mui/material";
 import InputBox from "./components/InputBox";
 import GraphBox from "./components/GraphBox";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import ChatBox from "./components/ChatBox";
 import {
     LineGraph,
@@ -65,7 +65,7 @@ export default function Home() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [pendingSqlData, setPendingSqlData] = useState<Record<string, any>[]>([]);
+    const sqlDataRef = useRef<Record<string, any>[]>([]);
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
 
 
@@ -86,39 +86,28 @@ export default function Home() {
 
 
     const toolHandlers = useCallback((module: any) => {
-        // module comes from display_modules event
-        // It could be the old format (pre-built traces) or new format (chart config + type)
         if (module.type === "chart" && module.config) {
-            // New format: chart config from display agent — combine with stored SQL data
-            setPendingSqlData((currentSqlData: Record<string, any>[]) => {
-                const { data: traces, layout } = buildPlotlyChart(module.config, currentSqlData);
-                const graphType = module.graphType || "LineGraph";
-                const payload = { data: traces, layout, title: module.config.update_layout_title };
+            // Combine chart config from display agent with stored SQL data
+            const { data: traces, layout } = buildPlotlyChart(module.config, sqlDataRef.current);
+            const graphType = module.graphType || "LineGraph";
+            const payload = { data: traces, layout, title: module.config.update_layout_title };
 
-                if (graphType === "LineGraph") {
-                    setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
-                } else if (graphType === "BarGraph") {
-                    setDisplayBox((prev: ChartData[]) => [...prev, BarGraph.fromData(payload)]);
-                } else if (graphType === "ScatterPlot") {
-                    setDisplayBox((prev: ChartData[]) => [...prev, ScatterPlotGraph.fromData(payload)]);
-                } else {
-                    setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
-                }
-                return currentSqlData; // don't clear — keep for potential re-use
-            });
+            if (graphType === "ScatterPlot") {
+                setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
+            } else if (graphType === "BarGraph") {
+                setDisplayBox((prev) => [...prev, BarGraph.fromData(payload)]);
+            } else {
+                setDisplayBox((prev) => [...prev, LineGraph.fromData(payload)]);
+            }
         } else {
             // Old format: pre-built Plotly traces
-            const payload = {
-                data: module.data,
-                layout: module.layout,
-                title: module.title,
-            };
+            const payload = { data: module.data, layout: module.layout, title: module.title };
             if (module.type === "LineGraph") {
-                setDisplayBox((prev: ChartData[]) => [...prev, LineGraph.fromData(payload)]);
+                setDisplayBox((prev) => [...prev, LineGraph.fromData(payload)]);
             } else if (module.type === "BarGraph") {
-                setDisplayBox((prev: ChartData[]) => [...prev, BarGraph.fromData(payload)]);
+                setDisplayBox((prev) => [...prev, BarGraph.fromData(payload)]);
             } else if (module.type === "ScatterPlot") {
-                setDisplayBox((prev: ChartData[]) => [...prev, ScatterPlotGraph.fromData(payload)]);
+                setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
             } else {
                 console.warn(`No handler for module type: "${module.type}"`);
             }
@@ -162,7 +151,7 @@ export default function Home() {
             await parseStream(response, {
                 onSqlData: (payload) => {
                     console.log("[page] Received SQL data:", payload.data?.length, "rows");
-                    setPendingSqlData(payload.data || []);
+                    sqlDataRef.current = payload.data || [];
                 },
 
                 onThinking: (text) => {
