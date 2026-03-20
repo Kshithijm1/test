@@ -71,7 +71,17 @@ def display_agent(state: AgentState) -> AgentState:
         log.debug(f"[DISPLAY] Raw response type: {type(response)}")
         log.debug(f"[DISPLAY] Raw response content: {response.content[:500]}")
         
-        chart_config = json.loads(response.content)
+        # Strip markdown code blocks if present
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content[7:]  # Remove ```json
+        if content.startswith("```"):
+            content = content[3:]  # Remove ```
+        if content.endswith("```"):
+            content = content[:-3]  # Remove trailing ```
+        content = content.strip()
+        
+        chart_config = json.loads(content)
 
         if "error" in chart_config:
             log.error(f"[DISPLAY] Chart config error: {chart_config['error']}")
