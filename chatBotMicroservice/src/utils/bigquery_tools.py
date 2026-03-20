@@ -275,8 +275,11 @@ def execute_bigquery(sql_query: str, limit: int = 100) -> str:
                     row_dict[key] = value.isoformat()
                 elif value is None:
                     row_dict[key] = None
-                else:
+                elif isinstance(value, (int, float, str, bool)):
                     row_dict[key] = value
+                else:
+                    # Convert Decimal and other numeric types to float
+                    row_dict[key] = float(value)
             rows.append(row_dict)
         
         return json.dumps(rows, indent=2)
