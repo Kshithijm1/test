@@ -32,11 +32,13 @@ def response_agent(state: AgentState) -> AgentState:
     pm_plan = state.get("pm_plan", "")
     tool_context = _extract_tool_context(state["messages"])
     data_fetched = state.get("data_fetched", True)
+    sql_data = state.get("SQLData", "")
 
     log.info(
         f"[RESPOND] Inputs — pm_plan: {bool(pm_plan)}, "
         f"tool_context: {len(tool_context)} chars, "
-        f"data_fetched: {data_fetched}"
+        f"data_fetched: {data_fetched}, "
+        f"SQLData length: {len(sql_data)}"
     )
 
     # ── Short-circuit if data was required but nothing came back ──────────────

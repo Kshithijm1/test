@@ -62,12 +62,13 @@ def researcher_agent(state: AgentState) -> AgentState:
             log.error(f"[RESEARCHER] Failed to parse BigQuery results: {e}")
 
         elapsed = time.time() - t0
-        log.info(f"[RESEARCHER] ✓ Done in {elapsed:.2f}s | {len(data_rows)} data rows")
+        data_fetched_status = len(data_rows) > 0
+        log.info(f"[RESEARCHER] ✓ Done in {elapsed:.2f}s | {len(data_rows)} data rows | data_fetched={data_fetched_status}")
 
         return {
             "messages": [],
             "stream_chunks": [],
-            "data_fetched": len(data_rows) > 0,
+            "data_fetched": data_fetched_status,
             "SQLQuery": clean_sql,
             "SQLData": execution_result,
         }

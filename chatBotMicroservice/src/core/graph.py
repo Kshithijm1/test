@@ -22,7 +22,7 @@ def build_graph():
 
     builder.set_entry_point("project_manager")
 
-    builder.add_edge("project_manager", "researcher")
+    builder.add_edge("project_manager", "researcher_agent")
     builder.add_edge("researcher_agent", "response_agent")
     builder.add_edge("response_agent", "display_agent")
     builder.add_edge("display_agent", END)
