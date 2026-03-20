@@ -158,7 +158,6 @@ Follow this reasoning process:
 2. Identify relevant datasets, tables and fields.
 3. Construct a valid bigquery SQL query.
 4. Ensure the query is efficient and leverage filters, partitioning, clustering etc. when possible.
-Examples: {OUTPUT_EXAMPLES}
 """
 
 STOPS = """
