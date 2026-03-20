@@ -1,0 +1,39 @@
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /home/user/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /home/user/aiagent/investiqdemo/package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://0.0.0.0:3000
+
+✓ Starting...
+2026-03-03T21:00:10.826Z next:router-server:filesystem nextDataRoutes Set(0) {}
+2026-03-03T21:00:10.830Z next:router-server:filesystem dynamicRoutes []
+2026-03-03T21:00:10.830Z next:router-server:filesystem customRoutes {
+  headers: [],
+  rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
+  redirects: [
+    {
+      source: '/:path+/',
+      destination: '/:path+',
+      permanent: true,
+      locale: undefined,
+      internal: true,
+      priority: true
+    }
+  ]
+}
+2026-03-03T21:00:10.832Z next:router-server:filesystem publicFolderItems Set(0) {}
+2026-03-03T21:00:10.832Z next:router-server:filesystem nextStaticFolderItems Set(0) {}
+2026-03-03T21:00:10.832Z next:router-server:filesystem pageFiles Set(0) {}
+2026-03-03T21:00:10.832Z next:router-server:filesystem appFiles Set(0) {}
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+Creating turbopack project { dir: '/home/user/aiagent/investiqdemo', testMode: true }
+✓ Ready in 1380ms
