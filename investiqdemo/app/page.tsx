@@ -94,9 +94,18 @@ export default function Home() {
         if (!config || rows.length === 0) return;
 
         console.log("[tryBuildChart] Building chart with", rows.length, "rows");
+        console.log("[tryBuildChart] Full config object:", config);
+        console.log("[tryBuildChart] config.graphType:", config.graphType);
+        console.log("[tryBuildChart] config.config.usecase:", config.config?.usecase);
+        
         const { data: traces, layout } = buildPlotlyChart(config.config, rows);
         const graphType = config.graphType || "LineGraph";
         const payload = { data: traces, layout, title: config.config.update_layout_title };
+
+        console.log("[tryBuildChart] Determined graphType:", graphType);
+        console.log("[tryBuildChart] Creating chart class:", 
+            graphType === "ScatterPlot" ? "ScatterPlotGraph" :
+            graphType === "BarGraph" ? "BarGraph" : "LineGraph");
 
         if (graphType === "ScatterPlot") {
             setDisplayBox((prev) => [...prev, ScatterPlotGraph.fromData(payload)]);
