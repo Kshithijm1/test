@@ -1,3 +1,4 @@
+import json
 import time
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
@@ -61,6 +62,16 @@ def response_agent(state: AgentState) -> AgentState:
     ]
     if tool_context:
         system_parts.append(f"\nResearch context:\n{tool_context[:RESPOND_TOOL_CONTEXT_WINDOW]}")
+    
+    # Add SQL data summary to context so LLM knows data is available
+    if sql_data and needs_data:
+        try:
+            parsed_data = json.loads(sql_data)
+            if isinstance(parsed_data, list) and len(parsed_data) > 0:
+                data_summary = f"\nData retrieved: {len(parsed_data)} rows of financial data available."
+                system_parts.append(data_summary)
+        except:
+            pass
 
     user_turn = user_msg
     if pm_plan:
