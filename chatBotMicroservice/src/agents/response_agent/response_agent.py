@@ -38,6 +38,7 @@ def response_agent(state: AgentState) -> AgentState:
     needs_data = data_needed.lower() not in ("none", "n/a", "")
 
     log.info(f"[RESPOND] data_needed: '{data_needed}', needs_data: {needs_data}, data_fetched: {data_fetched}")
+    log.info(f"[RESPOND] pm_plan excerpt: {pm_plan[:300]}...")
 
     if needs_data and not data_fetched:
         log.warning("[RESPOND] Data was required but not fetched — returning honest failure")
