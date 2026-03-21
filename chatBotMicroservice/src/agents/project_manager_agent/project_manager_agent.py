@@ -8,7 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from core.models import llm_medium
 from utils.helpers import log, _truncate, llm_call
-from .prompt import build_project_manager_prompt
+from .prompt import build_project_manager_system_prompt, build_project_manager_user_message
 
 
 def project_manager_agent(state: AgentState) -> AgentState:
@@ -30,18 +30,21 @@ def project_manager_agent(state: AgentState) -> AgentState:
     log.info(f"[ANALYSIS] User Query (A): {_truncate(user_msg, 100)}")
 
     # Build Analysis Agent prompt (X = A + AA + F)
-    # Injects user query into Context section following R+T+C+R+SC+O anatomy
-    analysis_prompt = build_project_manager_prompt(user_msg)
-    log.debug(f"[ANALYSIS] Prompt length: {len(analysis_prompt)} chars")
+    # Split into system (R+T+R+SC+O) and user (Context with query) for Gemini API compatibility
+    system_prompt = build_project_manager_system_prompt()
+    user_message = build_project_manager_user_message(user_msg)
+    
+    log.debug(f"[ANALYSIS] System prompt length: {len(system_prompt)} chars")
+    log.debug(f"[ANALYSIS] User message length: {len(user_message)} chars")
 
     # Invoke LLM to generate structured plan (Context output B)
-    # Note: Gemini requires at least one user message, so we send the prompt as system and user query as user message
+    # Gemini requires: SystemMessage + HumanMessage (not just SystemMessage alone)
     plan = llm_call(
         state,
         llm_medium.invoke,
         [
-            SystemMessage(content=analysis_prompt),
-            HumanMessage(content=user_msg),
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_message),
         ],
         status_before="🗂️ Analyzing query and building execution plan…",
         status_after="✅ Analytical brief ready",

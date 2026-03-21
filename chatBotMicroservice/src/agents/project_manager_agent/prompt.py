@@ -65,27 +65,13 @@ STEPS must describe WHAT needs to happen at a high level only — never HOW.
 Never mention tools, APIs, libraries, functions, data formats, or implementation details."""
 
 
-def build_project_manager_prompt(user_query: str) -> str:
-    """Build the full Analysis Agent prompt with runtime user query injected."""
-    context = f"""User Role: {UserRole}
-User Query: {user_query}
-Workflow Goals: {WorkflowGoal}
-
-Default Assumptions (apply when not explicitly stated in the query):
-    - Default Time Period: {DefaultTimePeriod}
-    - Default Period Filling Type: {DefaultPeriodFillingType}
-    - Default Time End Date: {DefaultTimeEndDate}
-    - Default Country: {DefaultCountry}
-    - Default Sector: {DefaultSector}"""
-    
+def build_project_manager_system_prompt() -> str:
+    """Build the system prompt with R+T+R+SC+O framework (without user query)."""
     return f"""Role:
 {Role}
 
 Task:
 {Task}
-
-Context:
-{context}
 
 Reasoning:
 {Reasoning}
@@ -97,5 +83,17 @@ Output:
 {Output}"""
 
 
-# Legacy constant for backward compatibility
-PROJECT_MANAGER_PROMPT = build_project_manager_prompt("[User query will be injected at runtime]")
+def build_project_manager_user_message(user_query: str) -> str:
+    """Build the user message with query and context."""
+    return f"""User Role: {UserRole}
+User Query: {user_query}
+Workflow Goals: {WorkflowGoal}
+
+Default Assumptions (apply when not explicitly stated in the query):
+    - Default Time Period: {DefaultTimePeriod}
+    - Default Period Filling Type: {DefaultPeriodFillingType}
+    - Default Time End Date: {DefaultTimeEndDate}
+    - Default Country: {DefaultCountry}
+    - Default Sector: {DefaultSector}
+
+Please analyze the above query and generate the structured execution plan."""
