@@ -37,6 +37,8 @@ def response_agent(state: AgentState) -> AgentState:
     data_needed = data_needed_match.group(1).strip() if data_needed_match else ""
     needs_data = data_needed.lower() not in ("none", "n/a", "")
 
+    log.info(f"[RESPOND] data_needed: '{data_needed}', needs_data: {needs_data}, data_fetched: {data_fetched}")
+
     if needs_data and not data_fetched:
         log.warning("[RESPOND] Data was required but not fetched — returning honest failure")
         content = (
@@ -63,15 +65,18 @@ def response_agent(state: AgentState) -> AgentState:
     if tool_context:
         system_parts.append(f"\nResearch context:\n{tool_context[:RESPOND_TOOL_CONTEXT_WINDOW]}")
     
-    # Add SQL data summary to context so LLM knows data is available
-    if sql_data and needs_data:
+    # Add SQL data to context so LLM can reference actual data
+    if sql_data:
         try:
             parsed_data = json.loads(sql_data)
             if isinstance(parsed_data, list) and len(parsed_data) > 0:
-                data_summary = f"\nData retrieved: {len(parsed_data)} rows of financial data available."
-                system_parts.append(data_summary)
-        except:
-            pass
+                # Provide first few rows as sample
+                sample_rows = parsed_data[:3]
+                data_context = f"\n\nData Summary:\n- Retrieved {len(parsed_data)} rows of data\n- Sample data (first 3 rows):\n{json.dumps(sample_rows, indent=2)}"
+                system_parts.append(data_context)
+                log.info(f"[RESPOND] Added {len(parsed_data)} rows of SQL data to context")
+        except Exception as e:
+            log.warning(f"[RESPOND] Failed to parse SQL data: {e}")
 
     user_turn = user_msg
     if pm_plan:
