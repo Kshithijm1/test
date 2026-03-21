@@ -32,7 +32,7 @@ Use Case 1: Line Chart (one X, one Y)
   "update_xaxis_title_text": "Filing date",
   "update_yaxis_title_text": "Forward PE",
   "name": "Forward PE",
-  "mode": "line+markers",
+  "mode": "lines+markers",
   "x": "filing_date",
   "y": "forward_pe"
 }
@@ -56,7 +56,7 @@ Use Case 3: Line Chart (one X, two Y)
   "update_xaxis_title_text": "Filing Date",
   "update_yaxis_title_text": ["EBITDA margin", "Capex"],
   "name": ["EBITDA margin", "Capex"],
-  "mode": "line+markers",
+  "mode": "lines+markers",
   "x": "filing_date",
   "y": ["EBITDA margin", "Capex"]
 }
