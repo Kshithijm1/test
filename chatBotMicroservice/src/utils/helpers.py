@@ -19,7 +19,6 @@ log = logging.getLogger("agent")
 # CONSTANTS — Graph-level limits
 # =============================================================================
 
-GRAPH_SLA_SECS = 1000  # hard timeout for the whole graph
 MAX_PROMPT_CHARS = 15000  # max chars of a tool result stored in state
 MAX_MESSAGES = 6  # max conversation turns kept
 RESEARCHER_MAX_ITERATIONS = 10  # max tool-call iterations per request
@@ -33,18 +32,14 @@ RESEARCHER_NEED_WINDOW = 200  # data_needed excerpt shown to planner
 RESEARCHER_CONTEXT_WINDOW = 600  # accumulated results shown to planner
 RESPOND_TOOL_CONTEXT_WINDOW = 1500  # tool context passed to response agent
 RESPOND_PM_PLAN_WINDOW = 400  # pm_plan excerpt appended to user turn
-VALIDATOR_QUESTION_WINDOW = 200  # user question shown to validator
-VALIDATOR_RESPONSE_WINDOW = 600  # response excerpt shown to validator
 LOG_CHUNK_PREVIEW = 80  # chars of a chunk logged in controller
 
 # =============================================================================
 # REGEX PATTERNS
 # =============================================================================
 
-# Allow for markdown bold formatting the PM model sometimes emits, e.g.
-# "**DATA_NEEDED:** none" or "**CHART_TYPE**: BarGraph"
+# Allow for markdown bold formatting the PM model sometimes emits
 DATA_NEEDED_EXTRACT = re.compile(r"DATA_NEEDED\s*\*{0,2}\s*:\s*\*{0,2}\s*(.+?)(?:\n|$)", re.I)
-CHART_TYPE_EXTRACT = re.compile(r"CHART_TYPE\s*\*{0,2}\s*:\s*\*{0,2}\s*(\w+)", re.I)
 
 # =============================================================================
 # HELPERS
@@ -92,17 +87,6 @@ def extract_json_object(text: str) -> str:
 def _truncate(text: str, max: int = 120) -> str:
     text = str(text)
     return text if len(text) <= max else text[:max] + "..."
-
-
-def _sla_exceeded(state) -> bool:
-    start = state.get("start_time")
-    if not start:
-        return False
-    elapsed = time.time() - start
-    if elapsed > GRAPH_SLA_SECS:
-        log.warning(f"[SLA] {elapsed:.1f}s > {GRAPH_SLA_SECS}s — triggering early exit")
-        return True
-    return False
 
 
 def _extract_tool_context(messages: list) -> str:

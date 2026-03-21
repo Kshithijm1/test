@@ -1,41 +1,60 @@
+"""
+Analysis Agent (Project Manager Agent)
+Translates natural language investment questions into structured analytical briefs.
+Follows R+T+C+R+SC+O prompt anatomy: Role, Task, Context, Reasoning, StoppingCriteria, Output
+"""
 import time
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.state import AgentState
 from core.models import llm_medium
-from utils.helpers import log, _sla_exceeded, _truncate, llm_call
-from .prompt import PROJECT_MANAGER_PROMPT
+from utils.helpers import log, _truncate, llm_call
+from .prompt import build_project_manager_prompt
 
 
 def project_manager_agent(state: AgentState) -> AgentState:
-    log.info("━━━ [NODE 1 / PROJECT MANAGER] Planning steps")
+    """
+    Analysis Agent - Converts user query into structured execution plan.
+    
+    Input:  User's natural language query (Q)
+    Output: Structured context string (B) containing:
+            - STEPS: High-level execution plan
+            - DATA_NEEDED: Required dataItemValues
+            - OUTPUT_FORMAT: text | chart | both
+            - CHART_TYPE: ScatterPlot | LineGraph | BarGraph | none
+    """
+    log.info("━━━ [ANALYSIS AGENT] Translating query into structured plan")
     t0 = time.time()
 
-    if _sla_exceeded(state):
-        log.warning("[PM] Skipping — SLA exceeded")
-        return {"messages": [], "pm_plan": "", "stream_chunks": [], "display_results": []}
-
+    # Extract user query (Element A)
     user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
-    log.info(f"[PM] User message: {_truncate(user_msg, 100)}")
+    log.info(f"[ANALYSIS] User Query (A): {_truncate(user_msg, 100)}")
 
+    # Build Analysis Agent prompt (X = A + AA + F)
+    # Injects user query into Context section following R+T+C+R+SC+O anatomy
+    analysis_prompt = build_project_manager_prompt(user_msg)
+    log.debug(f"[ANALYSIS] Prompt length: {len(analysis_prompt)} chars")
+
+    # Invoke LLM to generate structured plan (Context output B)
     plan = llm_call(
         state,
         llm_medium.invoke,
         [
-            SystemMessage(content=PROJECT_MANAGER_PROMPT),
-            HumanMessage(content=user_msg),
+            SystemMessage(content=analysis_prompt),
         ],
-        status_before="🗂️ Planning your request…",
-        status_after="✅ Plan ready",
-        label="PM",
+        status_before="🗂️ Analyzing query and building execution plan…",
+        status_after="✅ Analytical brief ready",
+        label="ANALYSIS",
     ).strip()
 
+    # Fallback if LLM returns empty
     if not plan:
-        log.warning("[PM] llm_call returned empty — using fallback plan")
-        plan = "STEPS: 1. Answer the question directly.\n" "DATA_NEEDED: none\nOUTPUT_FORMAT: text\nCHART_TYPE: none"
+        log.warning("[ANALYSIS] LLM returned empty — applying fallback plan")
+        plan = "STEPS: 1. Answer the question directly.\nDATA_NEEDED: none\nOUTPUT_FORMAT: text\nCHART_TYPE: none"
 
-    log.info(f"[PM] Plan ({len(plan)} chars): {_truncate(plan, 200)}")
-    log.info(f"[PM] ✓ Done in {time.time() - t0:.2f}s")
+    log.info(f"[ANALYSIS] Context Output (B): {_truncate(plan, 200)}")
+    log.info(f"[ANALYSIS] ✓ Done in {time.time() - t0:.2f}s")
 
+    # Return structured plan to state (consumed by BQAgent and PlotlyAgent)
     return {
         "messages": [],
         "pm_plan": plan,

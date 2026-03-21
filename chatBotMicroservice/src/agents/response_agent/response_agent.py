@@ -4,7 +4,6 @@ from core.state import AgentState
 from core.models import llm_respond
 from utils.helpers import (
     log,
-    _sla_exceeded,
     _truncate,
     llm_call,
     DATA_NEEDED_EXTRACT,
@@ -18,15 +17,6 @@ from .prompt import RESPONSE_AGENT_BASE_PROMPT
 def response_agent(state: AgentState) -> AgentState:
     log.info("━━━ [NODE 4 / RESPONSE AGENT] Generating final answer")
     t0 = time.time()
-
-    if _sla_exceeded(state):
-        log.warning("[RESPOND] SLA exceeded — returning fallback")
-        return {
-            "messages": [],
-            "stream_chunks": [
-                emit("response_content", "I wasn't able to complete your request in time. Please try again.")
-            ],
-        }
 
     user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
     pm_plan = state.get("pm_plan", "")
