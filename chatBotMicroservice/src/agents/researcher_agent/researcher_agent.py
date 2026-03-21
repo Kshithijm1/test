@@ -3,7 +3,7 @@ import time
 from langchain_core.messages import HumanMessage
 from core.state import AgentState
 from utils.tools import TOOL_MAP
-from utils.helpers import log, _sla_exceeded
+from utils.helpers import log
 
 
 def researcher_agent(state: AgentState) -> AgentState:
@@ -17,10 +17,6 @@ def researcher_agent(state: AgentState) -> AgentState:
     """
     log.info("━━━ [RESEARCHER] BigQuery SQL generation and execution")
     t0 = time.time()
-
-    if _sla_exceeded(state):
-        log.warning("[RESEARCHER] Skipping — SLA exceeded")
-        return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": ""}
 
     user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
     if not user_msg:

@@ -3,7 +3,7 @@ import time
 from langchain_core.messages import HumanMessage
 from langchain_google_vertexai import ChatVertexAI
 from core.state import AgentState
-from utils.helpers import log, _sla_exceeded
+from utils.helpers import log
 from .prompt import CHART_CONFIG_SYSTEM_PROMPT
 
 
@@ -14,10 +14,6 @@ def display_agent(state: AgentState) -> AgentState:
     """
     log.info("━━━ [DISPLAY AGENT] Generating chart configuration")
     t0 = time.time()
-
-    if _sla_exceeded(state):
-        log.warning("[DISPLAY] Skipping — SLA exceeded")
-        return {"messages": [], "display_results": [], "stream_chunks": [], "GraphType": "", "VisualizationJSON": ""}
 
     sql_data = state.get("SQLData", "")
     if not sql_data:
