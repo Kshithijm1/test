@@ -35,11 +35,13 @@ def project_manager_agent(state: AgentState) -> AgentState:
     log.debug(f"[ANALYSIS] Prompt length: {len(analysis_prompt)} chars")
 
     # Invoke LLM to generate structured plan (Context output B)
+    # Note: Gemini requires at least one user message, so we send the prompt as system and user query as user message
     plan = llm_call(
         state,
         llm_medium.invoke,
         [
             SystemMessage(content=analysis_prompt),
+            HumanMessage(content=user_msg),
         ],
         status_before="🗂️ Analyzing query and building execution plan…",
         status_after="✅ Analytical brief ready",
