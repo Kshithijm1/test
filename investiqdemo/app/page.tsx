@@ -14,56 +14,114 @@ import { parseStream, DisplayModule } from "./hooks/useStreamParser";
 
 
 /**
- * Build Plotly traces + layout from the display agent's chart config and raw SQL data rows.
+ * Trace template builders for each use case.
+ * Each template defines the exact Plotly trace structure for that use case.
+ */
+const TRACE_TEMPLATES = {
+	// Use Case 1: Single line chart (one X, one Y)
+	"1": (config: any, sqlRows: Record<string, any>[]) => {
+		const xValues = sqlRows.map((row) => row[config.x]);
+		const yValues = sqlRows.map((row) => row[config.y]);
+		
+		console.log(`[UC1] Single line: x="${config.x}", y="${config.y}"`);
+		console.log(`[UC1] Data points: ${xValues.length}, mode: ${config.mode}`);
+		
+		return [{
+			x: xValues,
+			y: yValues,
+			type: "scatter" as const,
+			mode: config.mode || "lines+markers",
+			name: config.name || config.y,
+			connectgaps: true,
+		}];
+	},
+
+	// Use Case 2: Scatter plot (one X, one Y, markers only)
+	"2": (config: any, sqlRows: Record<string, any>[]) => {
+		const xValues = sqlRows.map((row) => row[config.x]);
+		const yValues = sqlRows.map((row) => row[config.y]);
+		
+		console.log(`[UC2] Scatter plot: x="${config.x}", y="${config.y}"`);
+		console.log(`[UC2] Data points: ${xValues.length}, mode: markers`);
+		
+		return [{
+			x: xValues,
+			y: yValues,
+			type: "scatter" as const,
+			mode: "markers",
+			name: config.name || config.y,
+			marker: { size: 8 },
+		}];
+	},
+
+	// Use Case 3: Multi-line chart (one X, multiple Y)
+	"3": (config: any, sqlRows: Record<string, any>[]) => {
+		const xValues = sqlRows.map((row) => row[config.x]);
+		const yCols = Array.isArray(config.y) ? config.y : [config.y];
+		const names = Array.isArray(config.name) ? config.name : [config.name];
+		
+		console.log(`[UC3] Multi-line: x="${config.x}", y=[${yCols.join(", ")}]`);
+		console.log(`[UC3] Lines: ${yCols.length}, data points: ${xValues.length}`);
+		
+		return yCols.map((yCol: string, i: number) => {
+			const yValues = sqlRows.map((row) => row[yCol]);
+			return {
+				x: xValues,
+				y: yValues,
+				type: "scatter" as const,
+				mode: config.mode || "lines+markers",
+				name: names[i] || yCol,
+				connectgaps: true,
+			};
+		});
+	},
+};
+
+/**
+ * Build Plotly traces + layout using template-based approach.
+ * Each use case has a predefined trace structure.
  */
 function buildPlotlyChart(
 	config: any,
 	sqlRows: Record<string, any>[]
 ): { data: any[]; layout: any } {
 	console.log("[buildPlotlyChart] ===== START =====");
+	console.log("[buildPlotlyChart] Use case:", config.usecase);
 	console.log("[buildPlotlyChart] Config:", config);
-	console.log("[buildPlotlyChart] SQL rows count:", sqlRows.length);
-	console.log("[buildPlotlyChart] SQL row sample:", sqlRows[0]);
+	console.log("[buildPlotlyChart] SQL rows:", sqlRows.length);
 	console.log("[buildPlotlyChart] Available columns:", Object.keys(sqlRows[0] || {}));
 
-	const xCol = config.x;
-	const yCols = Array.isArray(config.y) ? config.y : [config.y];
-	const names = Array.isArray(config.name) ? config.name : [config.name];
-	const mode = config.mode || "lines+markers";
+	// Validate use case
+	const usecase = config.usecase || "1";
+	const templateBuilder = TRACE_TEMPLATES[usecase as keyof typeof TRACE_TEMPLATES];
+	
+	if (!templateBuilder) {
+		console.error(`[buildPlotlyChart] Unknown use case: "${usecase}". Defaulting to UC1.`);
+		const traces = TRACE_TEMPLATES["1"](config, sqlRows);
+		return { data: traces, layout: buildLayout(config) };
+	}
 
-	console.log("[buildPlotlyChart] Looking for X column:", xCol);
-	console.log("[buildPlotlyChart] Looking for Y columns:", yCols);
-
-	const xValues = sqlRows.map((row) => row[xCol]);
-	console.log("[buildPlotlyChart] X values extracted:", xValues.slice(0, 3), "...");
-
-	const traces = yCols.map((yCol: string, i: number) => {
-		const yValues = sqlRows.map((row) => row[yCol]);
-		console.log(`[buildPlotlyChart] Y values for "${yCol}":`, yValues.slice(0, 3), "...");
-		return {
-			x: xValues,
-			y: yValues,
-			type: "scatter" as const,
-			mode,
-			name: names[i] || yCol,
-			connectgaps: true,
-		};
-	});
-
-	console.log("[buildPlotlyChart] Final traces:", traces);
+	// Build traces using template
+	const traces = templateBuilder(config, sqlRows);
+	console.log("[buildPlotlyChart] Generated traces:", traces.length);
 	console.log("[buildPlotlyChart] ===== END =====");
 
+	return { data: traces, layout: buildLayout(config) };
+}
+
+/**
+ * Build Plotly layout from config
+ */
+function buildLayout(config: any): any {
 	const yAxisTitle = Array.isArray(config.update_yaxis_title_text)
 		? config.update_yaxis_title_text[0]
 		: config.update_yaxis_title_text || "";
 
-	const layout = {
+	return {
 		title: config.update_layout_title || "",
 		xaxis: { title: config.update_xaxis_title_text || "" },
 		yaxis: { title: yAxisTitle },
 	};
-
-	return { data: traces, layout };
 }
 
 
