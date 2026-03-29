@@ -129,20 +129,21 @@ Use case1:
     ORDER BY filingDate;
 
 Use case2:
-- Example user query: US Software companies: Total Revenues vs Gross Profit (most recent quarter).
+- Example user query: Consumer Discretionary: Cost of Revenues vs Operating Income.
 - Sample SQL output:
     SELECT f.companyId, filingDate, string_agg(distinct unitTypeName) as Scale, string_agg(distinct companyName) as Company_Name,
-    AVG(CASE WHEN dataItemValue = 'Revenue Growth' THEN collectionDataItemValue END) AS revenue_growth,
-    AVG(CASE WHEN dataItemValue = 'Gross Profit' THEN collectionDataItemValue END) AS gross_profit
+    AVG(CASE WHEN dataItemValue = 'Cost of Revenue' THEN collectionDataItemValue END) AS cost_of_revenue,
+    AVG(CASE WHEN dataItemValue = 'Operating Income (Loss)' THEN collectionDataItemValue END) AS operating_income
     FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
     left join `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg on f.companyId = bbg.companyId
     left join `cbldt-b016-int-2e05.stg_ext_sgam_1832_sp_ist.CountryGeo` c on f.countryId = c.countryId
-    where filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)
+    where filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)
     AND c.isoCountry2 = "US"
     AND periodTypeName = "Quarterly"
-    AND GICS_INDUSTRY_NAME = "Software"
+    AND bbg.GICS_SECTOR_NAME = "Consumer Discretionary"
     GROUP BY companyId, filingDate
-    ORDER BY filingDate;
+    ORDER BY filingDate DESC
+    LIMIT 100;
 
 Use case3:
 - Example user query: Tesla: Capital Expenditure vs Cash from Operations over time.

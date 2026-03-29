@@ -110,21 +110,21 @@ FILTERS: company=Apple Inc., time_period=Last 3 Years, period_type=Quarterly (de
 DEFAULTS_APPLIED: period_type=Quarterly (default)
 
 Example 2: "Consumer discretionary: cost of revenues vs operating income"
-Decomposed: metrics=[Cost of Revenues, Operating Income], entity=Consumer Discretionary sector (multiple companies), time=most recent quarter
+Decomposed: metrics=[Cost of Revenue, Operating Income], entity=Consumer Discretionary sector (multiple companies), time=most recent quarter
 Analysis: Two metrics, but MULTIPLE COMPANIES in a sector → UC2 (scatter plot, not time series)
 Expanded: Sector query implies comparing companies against each other at a single point in time
 Transformed:
 STEPS:
-1. Gather Cost of Revenues and Operating Income for all Consumer Discretionary companies (most recent quarter)
+1. Gather Cost of Revenue and Operating Income (Loss) for all Consumer Discretionary companies (most recent year)
 2. Present as a scatter plot showing the relationship between the two metrics across companies
 DATA_NEEDED:
-- Cost of Revenues
-- Operating Income
+- Cost of Revenue
+- Operating Income (Loss)
 OUTPUT_FORMAT: chart
 CHART_TYPE: ScatterPlot
 USE_CASE: 2
-FILTERS: sector=Consumer Discretionary, time_period=Most Recent Quarter (default), country=United States (default)
-DEFAULTS_APPLIED: time_period=Most Recent Quarter (default), country=United States (default)
+FILTERS: sector=Consumer Discretionary, time_period=Last 1 Year (default), country=United States (default)
+DEFAULTS_APPLIED: time_period=Last 1 Year (default), country=United States (default)
 
 Example 3: "Tesla EBITDA margin vs Capex"
 Decomposed: metrics=[EBITDA margin, Capex], entity=Tesla, time=implied Last 5 Years, filter=none
