@@ -173,11 +173,13 @@ Output:
 {Output}"""
 
 
-def build_project_manager_user_message(user_query: str) -> str:
-    """Build the user message with query and context."""
-    return f"""User Role: {UserRole}
+def build_project_manager_user_message(user_query: str, user_role: str = "", workflow_goals: str = "") -> str:
+    """Build the user message with query and context injected from state."""
+    role_text = user_role or UserRole
+    goals_text = workflow_goals or WorkflowGoal
+    return f"""User Role: {role_text}
 User Query: {user_query}
-Workflow Goals: {WorkflowGoal}
+Workflow Goals: {goals_text}
 
 Default Assumptions (apply when not explicitly stated in the query):
     - Default Time Period: {DefaultTimePeriod}

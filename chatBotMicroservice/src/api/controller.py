@@ -20,6 +20,25 @@ SYSTEM_PROMPT = (
     "Be concise and precise in your responses."
 )
 
+USER_ROLE = (
+    "The primary users of this system are investment professionals at Scotiabank Asset Management. "
+    "They are financially sophisticated but not technical users — they do not write SQL or code. "
+    "They expect outputs to be precise, visually clean, and immediately presentable to stakeholders. "
+    "Default to financial industry conventions in naming, formatting, and time period references. "
+    "Avoid technical jargon about the data infrastructure. If the query is ambiguous, apply standard "
+    "financial defaults rather than asking the user for clarification."
+)
+
+WORKFLOW_GOALS = (
+    "This system enables investment professionals to query financial market data using natural language "
+    "and receive instant, accurate visualizations — without requiring SQL or coding knowledge. "
+    "The goal of every agent in this workflow is to preserve the user's analytical intent at every "
+    "transformation step, apply conservative financial defaults when information is missing, and produce "
+    "outputs that are immediately usable in investment decision-making contexts. Accuracy and precision "
+    "are prioritized over speed. Never hallucinate data, never extrapolate beyond what the data supports, "
+    "and never produce a visualization that could mislead a financial professional."
+)
+
 MAX_PROMPT_LENGTH = 2000
 
 
@@ -51,14 +70,25 @@ async def chat(req: ChatRequest):
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=req.prompt),
             ],
+            "user_query": req.prompt,
+            "UserRole": USER_ROLE,
+            "WorkflowGoals": WORKFLOW_GOALS,
             "stream_chunks": [],
             "display_results": [],
             "data_fetched": False,
+            "SQLQuery": "",
+            "SQLData": "",
+            "df50": "",
+            "Context": "",
+            "pm_plan": "",
+            "GraphType": "",
+            "VisualizationJSON": "",
+            "Schema": "",
+            "Reasoning": "",
             "evaluation": "",
             "evaluation_critique": "",
             "retry_count": 0,
             "start_time": time.time(),
-            # token_queue removed — astream_events handles this natively
         }
 
         node_chunks: dict[str, list[str]] = {}

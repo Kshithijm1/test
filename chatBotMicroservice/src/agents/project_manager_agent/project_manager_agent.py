@@ -25,15 +25,22 @@ def project_manager_agent(state: AgentState) -> AgentState:
     log.info("━━━ [ANALYSIS AGENT] Translating query into structured plan")
     t0 = time.time()
 
-    # Extract user query (Element A)
-    user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
-    log.info(f"[ANALYSIS] User Query (A): {_truncate(user_msg, 100)}")
+    # Extract user query and static context from state
+    user_query = state.get("user_query", "")
+    user_role = state.get("UserRole", "")
+    workflow_goals = state.get("WorkflowGoals", "")
+
+    # Fallback to messages if user_query not in state
+    if not user_query:
+        user_query = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
+
+    log.info(f"[ANALYSIS] User Query (A): {_truncate(user_query, 100)}")
 
     # Build Analysis Agent prompt (X = A + AA + F)
-    # Split into system (R+T+R+SC+O) and user (Context with query) for Gemini API compatibility
+    # System = R+T+R+SC+O; User = Context (user_query + user_role + workflow_goals + defaults)
     system_prompt = build_project_manager_system_prompt()
-    user_message = build_project_manager_user_message(user_msg)
-    
+    user_message = build_project_manager_user_message(user_query, user_role, workflow_goals)
+
     log.debug(f"[ANALYSIS] System prompt length: {len(system_prompt)} chars")
     log.debug(f"[ANALYSIS] User message length: {len(user_message)} chars")
 
@@ -59,10 +66,11 @@ def project_manager_agent(state: AgentState) -> AgentState:
     log.info(f"[ANALYSIS] Context Output (B): {_truncate(plan, 200)}")
     log.info(f"[ANALYSIS] ✓ Done in {time.time() - t0:.2f}s")
 
-    # Return structured plan to state (consumed by BQAgent and PlotlyAgent)
+    # Write Context (B) to state — consumed by researcher_agent, display_agent, response_agent
     return {
         "messages": [],
         "pm_plan": plan,
+        "Context": plan,
         "stream_chunks": [],
         "display_results": [],
     }

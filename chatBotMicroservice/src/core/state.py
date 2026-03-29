@@ -8,8 +8,10 @@ def merge_lists(left: list, right: list) -> list:
 
 class AgentState(TypedDict):
     messages:            Annotated[list, add_messages]
+    user_query:          str
     SQLQuery:            str
     SQLData:             str
+    df50:                str
     GraphType:           str
     VisualizationJSON:   str
     Context:             str

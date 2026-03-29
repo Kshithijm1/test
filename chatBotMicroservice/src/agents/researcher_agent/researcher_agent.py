@@ -8,22 +8,45 @@ from utils.helpers import log
 
 def researcher_agent(state: AgentState) -> AgentState:
     """
-    Researcher agent using your SQL agent functionality.
+    BQAgent (Researcher Agent) — Generates and executes BigQuery SQL.
 
-    Flow:
-    1. generate_sql tool: LLM converts user question to BigQuery SQL
-    2. execute_bigquery tool: Runs SQL query and returns JSON results
-    3. Stores SQL in state.SQLQuery and results in state.SQLData
+    Reads from state:
+        user_query, UserRole, WorkflowGoals, Context (pm_plan)
+
+    Writes to state:
+        SQLQuery  — the executed SQL statement
+        SQLData   — full JSON result from BigQuery
+        df50      — top 50 rows as JSON string (for display agent)
+        data_fetched — bool indicating if rows were returned
     """
     log.info("━━━ [RESEARCHER] BigQuery SQL generation and execution")
     t0 = time.time()
 
-    user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
-    if not user_msg:
-        log.warning("[RESEARCHER] No user message found")
-        return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": ""}
+    # Read all context from state
+    user_query = state.get("user_query", "")
+    user_role = state.get("UserRole", "")
+    workflow_goals = state.get("WorkflowGoals", "")
+    context_b = state.get("Context", "") or state.get("pm_plan", "")
 
-    log.info(f"[RESEARCHER] User question: {user_msg[:100]}...")
+    # Fallback to messages if user_query not in state
+    if not user_query:
+        user_query = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
+
+    if not user_query:
+        log.warning("[RESEARCHER] No user query found in state or messages")
+        return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": "", "df50": ""}
+
+    log.info(f"[RESEARCHER] User query: {user_query[:100]}...")
+    log.info(f"[RESEARCHER] Context (B) available: {bool(context_b)}")
+
+    # Enrich query with Analysis Agent context (B) for more precise SQL generation
+    enriched_query = user_query
+    if context_b:
+        enriched_query = f"""User Query: {user_query}
+
+Analysis Context:
+{context_b}"""
+        log.info("[RESEARCHER] Enriched query with Analysis Agent context (B)")
 
     try:
         generate_sql_tool = TOOL_MAP.get("generate_sql")
@@ -31,10 +54,10 @@ def researcher_agent(state: AgentState) -> AgentState:
 
         if not generate_sql_tool or not execute_bigquery_tool:
             log.error("[RESEARCHER] BigQuery tools not found in TOOL_MAP")
-            return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": ""}
+            return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": "", "df50": ""}
 
         log.info("[RESEARCHER] Step 1: Generating SQL query...")
-        sql_result = generate_sql_tool.invoke({"query": user_msg})
+        sql_result = generate_sql_tool.invoke({"query": enriched_query})
         log.info(f"[RESEARCHER] SQL generated: {sql_result[:200]}...")
 
         # Extract the actual SELECT statement, skipping any validation error/metadata lines
@@ -62,7 +85,12 @@ def researcher_agent(state: AgentState) -> AgentState:
 
         elapsed = time.time() - t0
         data_fetched_status = len(data_rows) > 0
-        log.info(f"[RESEARCHER] ✓ Done in {elapsed:.2f}s | {len(data_rows)} data rows | data_fetched={data_fetched_status}")
+
+        # Top 50 rows for display agent (df50)
+        df50_rows = data_rows[:50]
+        df50_json = json.dumps(df50_rows)
+
+        log.info(f"[RESEARCHER] ✓ Done in {elapsed:.2f}s | {len(data_rows)} rows total | df50={len(df50_rows)} rows | data_fetched={data_fetched_status}")
 
         # Send full data to frontend for graph reconstruction
         from utils.helpers import emit
@@ -74,8 +102,9 @@ def researcher_agent(state: AgentState) -> AgentState:
             "data_fetched": data_fetched_status,
             "SQLQuery": clean_sql,
             "SQLData": execution_result,
+            "df50": df50_json,
         }
 
     except Exception as e:
         log.error(f"[RESEARCHER] Failed: {e}", exc_info=True)
-        return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": ""}
+        return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLQuery": "", "SQLData": "", "df50": ""}

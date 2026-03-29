@@ -4,42 +4,68 @@ from langchain_core.messages import HumanMessage
 from langchain_google_vertexai import ChatVertexAI
 from core.state import AgentState
 from utils.helpers import log
-from .prompt import CHART_CONFIG_SYSTEM_PROMPT
+from .prompt import CHART_CONFIG_SYSTEM_PROMPT, build_display_context
 
 
 def display_agent(state: AgentState) -> AgentState:
     """
-    Display agent using your exact Plotly agent logic with LangChain.
-    Converts Google SDK model.generate_content() to LangChain ChatVertexAI.
+    PlotlyAgent (Display Agent) — Generates chart configuration JSON.
+
+    Reads from state:
+        user_query, UserRole, WorkflowGoals, Context (B), SQLQuery, df50
+
+    Writes to state:
+        GraphType, VisualizationJSON, display_results
     """
     log.info("━━━ [DISPLAY AGENT] Generating chart configuration")
     t0 = time.time()
 
-    sql_data = state.get("SQLData", "")
-    if not sql_data:
-        log.warning("[DISPLAY] No SQLData available")
+    # Read all context from state
+    user_query = state.get("user_query", "")
+    user_role = state.get("UserRole", "")
+    workflow_goals = state.get("WorkflowGoals", "")
+    context_b = state.get("Context", "") or state.get("pm_plan", "")
+    sql_query = state.get("SQLQuery", "")
+    df50_json = state.get("df50", "")
+
+    # Fallback: use full SQLData if df50 not populated
+    if not df50_json:
+        df50_json = state.get("SQLData", "")
+
+    if not df50_json:
+        log.warning("[DISPLAY] No data available (df50 and SQLData both empty)")
         return {"messages": [], "display_results": [], "stream_chunks": [], "GraphType": "", "VisualizationJSON": ""}
 
-    user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
-    if not user_msg:
-        log.warning("[DISPLAY] No user message found")
+    # Fallback user_query to messages
+    if not user_query:
+        user_query = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
+
+    if not user_query:
+        log.warning("[DISPLAY] No user query found")
         return {"messages": [], "display_results": [], "stream_chunks": [], "GraphType": "", "VisualizationJSON": ""}
 
     try:
-        parsed_data = json.loads(sql_data)
-        if isinstance(parsed_data, list):
-            samples = parsed_data[:50]  # Use first 50 rows for inference
-        else:
+        samples = json.loads(df50_json) if isinstance(df50_json, str) else df50_json
+        if not isinstance(samples, list):
             samples = []
     except json.JSONDecodeError:
-        log.error("[DISPLAY] Failed to parse SQLData")
+        log.error("[DISPLAY] Failed to parse df50")
         return {"messages": [], "display_results": [], "stream_chunks": [], "GraphType": "", "VisualizationJSON": ""}
 
-    log.info(f"[DISPLAY] Processing {len(samples)} sample rows from SQLData")
-    log.debug(f"[DISPLAY] User question: {user_msg[:100]}...")
+    log.info(f"[DISPLAY] Processing {len(samples)} rows from df50")
+    log.debug(f"[DISPLAY] User query: {user_query[:100]}...")
+    log.info(f"[DISPLAY] Context (B) available: {bool(context_b)}")
+
+    # Build runtime context from state values
+    runtime_context = build_display_context(
+        user_query=user_query,
+        user_role=user_role,
+        workflow_goals=workflow_goals,
+        context_b=context_b,
+        sql_query=sql_query,
+    )
 
     try:
-        # Your exact Plotly agent logic: LangChain version of model.generate_content()
         model = ChatVertexAI(
             model_name="gemini-2.0-flash",
             project="cbldt-b016-int-2e05",
@@ -48,16 +74,20 @@ def display_agent(state: AgentState) -> AgentState:
             max_output_tokens=2048,
         )
 
-        # Your exact user_message structure
+        # Build system prompt with injected runtime context
+        system_prompt_with_context = CHART_CONFIG_SYSTEM_PROMPT.replace(
+            "Context:", f"Context:\n{runtime_context}\n"
+        )
+
+        # User message with query and df50 samples
         user_message = {
-            "user_question": user_msg,
+            "user_question": user_query,
             "samples": samples,
         }
 
-        # LangChain equivalent of your generate_content call with response_mime_type="application/json"
         response = model.invoke(
             [
-                {"role": "system", "content": CHART_CONFIG_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt_with_context},
                 {"role": "user", "content": json.dumps(user_message)}
             ],
             response_format={"type": "json_object"}

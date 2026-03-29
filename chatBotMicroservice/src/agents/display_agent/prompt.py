@@ -16,12 +16,36 @@ generate a valid JSON chart configuration that defines:
 The output must follow the required JSON schema and use case formats.
 """
 
+CONTEXT_BASE = """
+Priority: Use column names mentioned in user_question FIRST (filing_date > quarter_end_date)
+If user says "Gross Profit" but data shows "total_revenue", infer closest match but prefer semantic intent.
+Data Source: Financial time series with filing_date, quarter_end_date, ticker, revenue metrics.
+"""
+
 CONTEXT = """
 User Role: Financial Data Analyst
 Priority: Use column names mentioned in user_question FIRST (filing_date > quarter_end_date)
 If user says "Gross Profit" but data shows "total_revenue", infer closest match but prefer semantic intent.
 Data Source: Financial time series with filing_date, quarter_end_date, ticker, revenue metrics.
 """
+
+
+def build_display_context(user_query: str = "", user_role: str = "", workflow_goals: str = "",
+                          context_b: str = "", sql_query: str = "") -> str:
+    """Build runtime context for display agent injected from state."""
+    parts = []
+    if user_role:
+        parts.append(f"User Role: {user_role}")
+    if user_query:
+        parts.append(f"User Query: {user_query}")
+    if workflow_goals:
+        parts.append(f"Workflow Goals: {workflow_goals}")
+    if context_b:
+        parts.append(f"Analysis Context (use USE_CASE and CHART_TYPE from this):\n{context_b}")
+    if sql_query:
+        parts.append(f"SQL Query Used: {sql_query}")
+    parts.append(CONTEXT_BASE.strip())
+    return "\n\n".join(parts)
 
 OUTPUT_EXAMPLES = """
 Sample Use Case Configurations:
