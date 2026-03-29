@@ -79,11 +79,16 @@ Reasoning = """Walk through these steps for every query:
 
 (c) Expansion - Add implied dimensions:
     - If user asks "show revenue" → implies they want a trend → add time dimension
-    - If comparing two metrics → implies UC3 (multi-line chart)
+    - If comparing two metrics → check entity type: sector/industry = UC2, single company = UC3
 
 (d) Transformation - Produce clean Context (B):
-    - Map to use case: UC1 (single line), UC2 (scatter), UC3 (multi-line)
-    - Specify chart type: LineGraph for trends, ScatterPlot for correlations
+    - Map to use case with CRITICAL distinction:
+      * UC1: Single metric, single company, over time → LineGraph
+      * UC2: Multiple metrics OR multiple companies, at a SINGLE point in time (most recent quarter) → ScatterPlot
+      * UC3: Multiple metrics, single company, over time → LineGraph (multi-line)
+    - Key decision rule: If query mentions SECTOR/INDUSTRY (e.g., "Consumer Discretionary", "Software companies") → UC2 (comparing companies)
+    - Key decision rule: If query mentions SINGLE COMPANY NAME (e.g., "Tesla", "Apple") with multiple metrics → UC3 (comparing metrics over time)
+    - Specify chart type: LineGraph for time trends, ScatterPlot for cross-sectional comparisons
     - List all defaults applied for transparency
 
 Examples:
@@ -104,22 +109,22 @@ USE_CASE: 1
 FILTERS: company=Apple Inc., time_period=Last 3 Years, period_type=Quarterly (default)
 DEFAULTS_APPLIED: period_type=Quarterly (default)
 
-Example 2: "Show me top 10 stocks by revenue growth"
-Decomposed: metric=revenue growth, entity=stocks (top 10), time=implied trailing 12M, filter=rank by growth
-Analysis: "revenue growth" is not a stored dataItemValue → need Revenue for multiple periods to compute growth
-Expanded: ranking implies ScatterPlot or table, need ticker, company name, sector for context
+Example 2: "Consumer discretionary: cost of revenues vs operating income"
+Decomposed: metrics=[Cost of Revenues, Operating Income], entity=Consumer Discretionary sector (multiple companies), time=most recent quarter
+Analysis: Two metrics, but MULTIPLE COMPANIES in a sector → UC2 (scatter plot, not time series)
+Expanded: Sector query implies comparing companies against each other at a single point in time
 Transformed:
 STEPS:
-1. Gather Revenue data for US equities over trailing 12 months
-2. Rank by year-over-year revenue growth percentage
-3. Return top 10 results
+1. Gather Cost of Revenues and Operating Income for all Consumer Discretionary companies (most recent quarter)
+2. Present as a scatter plot showing the relationship between the two metrics across companies
 DATA_NEEDED:
-- Revenue
-OUTPUT_FORMAT: text
-CHART_TYPE: none
+- Cost of Revenues
+- Operating Income
+OUTPUT_FORMAT: chart
+CHART_TYPE: ScatterPlot
 USE_CASE: 2
-FILTERS: country=United States (default), time_period=Trailing 12M (default), sector=All sectors (default)
-DEFAULTS_APPLIED: country=United States (default), time_period=Trailing 12M (default), sector=All sectors (default)
+FILTERS: sector=Consumer Discretionary, time_period=Most Recent Quarter (default), country=United States (default)
+DEFAULTS_APPLIED: time_period=Most Recent Quarter (default), country=United States (default)
 
 Example 3: "Tesla EBITDA margin vs Capex"
 Decomposed: metrics=[EBITDA margin, Capex], entity=Tesla, time=implied Last 5 Years, filter=none
