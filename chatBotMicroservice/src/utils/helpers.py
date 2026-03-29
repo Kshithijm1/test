@@ -38,8 +38,9 @@ LOG_CHUNK_PREVIEW = 80  # chars of a chunk logged in controller
 # REGEX PATTERNS
 # =============================================================================
 
-# Allow for markdown bold formatting the PM model sometimes emits
-DATA_NEEDED_EXTRACT = re.compile(r"DATA_NEEDED\s*\*{0,2}\s*:\s*\*{0,2}\s*(.+?)(?:\n|$)", re.I)
+# Allow for markdown bold formatting and multi-line bullet lists
+# Matches "DATA_NEEDED:" followed by either "none" or a list of items (captures until next section)
+DATA_NEEDED_EXTRACT = re.compile(r"DATA_NEEDED\s*\*{0,2}\s*:\s*\*{0,2}\s*\n?((?:[-•]\s*.+?\n?)+|none|n/a)", re.I | re.MULTILINE)
 
 # =============================================================================
 # HELPERS

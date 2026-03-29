@@ -35,10 +35,15 @@ def response_agent(state: AgentState) -> AgentState:
     # ── Short-circuit if data was required but nothing came back ──────────────
     data_needed_match = DATA_NEEDED_EXTRACT.search(pm_plan)
     data_needed = data_needed_match.group(1).strip() if data_needed_match else ""
-    needs_data = data_needed.lower() not in ("none", "n/a", "")
-
-    log.info(f"[RESPOND] data_needed: '{data_needed}', needs_data: {needs_data}, data_fetched: {data_fetched}")
-    log.info(f"[RESPOND] pm_plan excerpt: {pm_plan[:300]}...")
+    
+    # Check if data is actually needed (not "none" or "n/a")
+    needs_data = data_needed.lower() not in ("none", "n/a", "") and data_needed.strip() != ""
+    
+    log.info(f"[RESPOND] DATA_NEEDED regex match: {bool(data_needed_match)}")
+    log.info(f"[RESPOND] data_needed extracted: '{data_needed[:100]}...'")
+    log.info(f"[RESPOND] needs_data: {needs_data}, data_fetched: {data_fetched}")
+    log.info(f"[RESPOND] SQLData length: {len(sql_data)}")
+    log.info(f"[RESPOND] pm_plan excerpt: {pm_plan[:400]}...")
 
     if needs_data and not data_fetched:
         log.warning("[RESPOND] Data was required but not fetched — returning honest failure")
