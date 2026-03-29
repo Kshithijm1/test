@@ -86,13 +86,18 @@ Columns:
   countryId INTEGER,
   incorporationCountryId INTEGER
 
-CRITICAL - Exact dataItemValue field names (case-sensitive, use these EXACT strings):
-  - 'Cost of Revenue' (NOT 'Cost Of Revenues' or 'Cost of Revenues')
-  - 'Operating Income (Loss)' (NOT 'Operating Income')
-  - 'Total Revenues' (NOT 'Total Revenue')
-  - 'Gross Profit'
-  - 'Capital Expenditure'
-  - 'Cash from Operations'
+CRITICAL - Common dataItemValue field names (case-sensitive):
+  - Revenue-related: 'Total Revenues', 'Total Revenue', 'Revenues', 'Revenue'
+  - Cost-related: 'Cost of Revenue', 'Cost Of Revenues', 'Cost of Goods Sold', 'COGS'
+  - Income-related: 'Operating Income', 'Operating Income (Loss)', 'Operating Income/Loss'
+  - Profit-related: 'Gross Profit', 'Net Income', 'Net Income (Loss)'
+  - Cash-related: 'Cash from Operations', 'Operating Cash Flow'
+  - Capex-related: 'Capital Expenditure', 'Capital Expenditures', 'Capex'
+
+IMPORTANT: If user asks for a metric (e.g., "Cost of Revenues"), try variations:
+  1. First try exact match with proper capitalization
+  2. If that might return NULLs, use LIKE pattern: WHERE dataItemValue LIKE '%Cost%Revenue%'
+  3. Common synonyms: Revenue = Total Revenues, Operating Income = Operating Income (Loss)
 """
 
 ROLE = """
