@@ -28,13 +28,9 @@ Columns:
   documentId INT64,
   dataItemId INT64,
   dataItemValue STRING, <this contains numeric dataitemname like Revenue, Long-Term Debt etc.>
-  dataDefinition STRING,
-  collectionDataItemValue NUMERIC, <this contains numeric dataitemvalue like 27.1>
+  collectionDataItemValue FLOAT64,
+  unitTypeId INT64,
   unitTypeName STRING,
-  dataCollectionTypeName STRING,
-  lineOrder INT64,
-  detailDisplay INT64,
-  summaryDisplay INT64,
   filingId INT64,
   fileVersionId STRING,
   filing_filingdate DATETIME,
@@ -89,6 +85,14 @@ Columns:
   companyStatusTypeId INTEGER,
   countryId INTEGER,
   incorporationCountryId INTEGER
+
+CRITICAL - Exact dataItemValue field names (case-sensitive, use these EXACT strings):
+  - 'Cost of Revenue' (NOT 'Cost Of Revenues' or 'Cost of Revenues')
+  - 'Operating Income (Loss)' (NOT 'Operating Income')
+  - 'Total Revenues' (NOT 'Total Revenue')
+  - 'Gross Profit'
+  - 'Capital Expenditure'
+  - 'Cash from Operations'
 """
 
 ROLE = """
