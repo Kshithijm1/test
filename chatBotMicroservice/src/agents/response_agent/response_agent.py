@@ -19,11 +19,19 @@ def response_agent(state: AgentState) -> AgentState:
     log.info("━━━ [NODE 4 / RESPONSE AGENT] Generating final answer")
     t0 = time.time()
 
-    user_msg = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
+    # Read all state context
+    user_query = state.get("user_query", "")
+    user_role = state.get("UserRole", "")
+    workflow_goals = state.get("WorkflowGoals", "")
     pm_plan = state.get("pm_plan", "")
-    tool_context = _extract_tool_context(state["messages"])
-    data_fetched = state.get("data_fetched", True)
     sql_data = state.get("SQLData", "")
+    data_fetched = state.get("data_fetched", True)
+    
+    # Fallback to messages if user_query not in state
+    if not user_query:
+        user_query = next((m.content for m in state["messages"] if isinstance(m, HumanMessage)), "")
+    
+    tool_context = _extract_tool_context(state["messages"])
 
     log.info(
         f"[RESPOND] Inputs — pm_plan: {bool(pm_plan)}, "
@@ -56,8 +64,8 @@ def response_agent(state: AgentState) -> AgentState:
             "stream_chunks": [emit("response_content", content)],
         }
 
-    # ── Build system prompt ───────────────────────────────────────────────────
-    is_simple = len(user_msg.split()) <= 15
+    # ── Build system prompt with state context ───────────────────────────────
+    is_simple = len(user_query.split()) <= 15
 
     system_parts = [
         RESPONSE_AGENT_BASE_PROMPT,
@@ -68,6 +76,14 @@ def response_agent(state: AgentState) -> AgentState:
             else "Write in natural prose. Be thorough but concise."
         ),
     ]
+    
+    # Add state context to prompt
+    if user_role:
+        system_parts.append(f"\nUser Role Context:\n{user_role}")
+    
+    if workflow_goals:
+        system_parts.append(f"\nWorkflow Goals:\n{workflow_goals}")
+    
     if tool_context:
         system_parts.append(f"\nResearch context:\n{tool_context[:RESPOND_TOOL_CONTEXT_WINDOW]}")
     
@@ -84,7 +100,7 @@ def response_agent(state: AgentState) -> AgentState:
         except Exception as e:
             log.warning(f"[RESPOND] Failed to parse SQL data: {e}")
 
-    user_turn = user_msg
+    user_turn = user_query
     if pm_plan:
         user_turn += f"\n\n[Execution plan for context]:\n{pm_plan[:RESPOND_PM_PLAN_WINDOW]}"
 

@@ -39,14 +39,23 @@ def researcher_agent(state: AgentState) -> AgentState:
     log.info(f"[RESEARCHER] User query: {user_query[:100]}...")
     log.info(f"[RESEARCHER] Context (B) available: {bool(context_b)}")
 
-    # Enrich query with Analysis Agent context (B) for more precise SQL generation
-    enriched_query = user_query
+    # Enrich query with full state context for SQL generation LLM
+    enriched_query_parts = []
+    
+    if user_role:
+        enriched_query_parts.append(f"User Role: {user_role}")
+    
+    if workflow_goals:
+        enriched_query_parts.append(f"Workflow Goals: {workflow_goals}")
+    
+    enriched_query_parts.append(f"User Query: {user_query}")
+    
     if context_b:
-        enriched_query = f"""User Query: {user_query}
-
-Analysis Context:
-{context_b}"""
-        log.info("[RESEARCHER] Enriched query with Analysis Agent context (B)")
+        enriched_query_parts.append(f"""Analysis Agent Output (use this to guide SQL generation):
+{context_b}""")
+    
+    enriched_query = "\n\n".join(enriched_query_parts)
+    log.info("[RESEARCHER] Enriched query with full state context (UserRole, WorkflowGoals, Context)")
 
     try:
         generate_sql_tool = TOOL_MAP.get("generate_sql")
