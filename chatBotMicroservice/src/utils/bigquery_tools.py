@@ -315,11 +315,13 @@ def execute_bigquery(sql_query: str, limit: int = 100) -> str:
     """
     client = bigquery.Client(project=PROJECT_ID)
     
-    # Extract the actual SELECT statement, skipping any DRY-RUN or VALIDATION ERROR metadata
+    # Extract SQL - handle CTEs (WITH ...) and plain SELECT, skipping DRY-RUN/metadata lines
+    cte_match = re.search(r'(WITH\s.+)', sql_query, re.DOTALL | re.IGNORECASE)
     select_match = re.search(r'(SELECT\s.+)', sql_query, re.DOTALL | re.IGNORECASE)
-    clean_sql = select_match.group(1).strip() if select_match else sql_query.strip()
-    
-    if not clean_sql.upper().strip().startswith("SELECT"):
+    clean_sql = (cte_match or select_match).group(1).strip() if (cte_match or select_match) else sql_query.strip()
+
+    first_keyword = clean_sql.upper().lstrip().split()[0] if clean_sql.strip() else ""
+    if first_keyword not in ("SELECT", "WITH"):
         return json.dumps({"error": "Only SELECT queries are allowed"})
     
     if "LIMIT" not in clean_sql.upper():
