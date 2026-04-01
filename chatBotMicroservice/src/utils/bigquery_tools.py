@@ -86,18 +86,17 @@ Columns:
   countryId INTEGER,
   incorporationCountryId INTEGER
 
-CRITICAL - Common dataItemValue field names (case-sensitive):
-  - Revenue-related: 'Total Revenues', 'Total Revenue', 'Revenues', 'Revenue'
-  - Cost-related: 'Cost of Revenue', 'Cost Of Revenues', 'Cost of Goods Sold', 'COGS'
-  - Income-related: 'Operating Income', 'Operating Income (Loss)', 'Operating Income/Loss'
-  - Profit-related: 'Gross Profit', 'Net Income', 'Net Income (Loss)'
-  - Cash-related: 'Cash from Operations', 'Operating Cash Flow'
-  - Capex-related: 'Capital Expenditure', 'Capital Expenditures', 'Capex'
-
-IMPORTANT: If user asks for a metric (e.g., "Cost of Revenues"), try variations:
-  1. First try exact match with proper capitalization
-  2. If that might return NULLs, use LIKE pattern: WHERE dataItemValue LIKE '%Cost%Revenue%'
-  3. Common synonyms: Revenue = Total Revenues, Operating Income = Operating Income (Loss)
+NOTE on dataItemValue: The exact string values in the database are not known upfront and vary by company/filing.
+  ALWAYS use LIKE patterns instead of exact equality for dataItemValue matching to avoid zero-result queries.
+  Pattern format: dataItemValue LIKE '%<keyword>%'
+  Examples:
+    - User says 'Total Assets'     → dataItemValue LIKE '%Total Asset%'
+    - User says 'Net Income'        → dataItemValue LIKE '%Net Income%'
+    - User says 'Revenue'           → dataItemValue LIKE '%Revenue%'
+    - User says 'Gross Profit'      → dataItemValue LIKE '%Gross Profit%'
+    - User says 'Operating Income'  → dataItemValue LIKE '%Operating Income%'
+    - User says 'Capital Expenditure' → dataItemValue LIKE '%Capital Expenditure%' OR dataItemValue LIKE '%Capex%'
+  Use the most specific keyword that captures the metric without being too narrow.
 
 CRITICAL - GICS Classification (use the correct column for each level):
   - GICS_SECTOR_NAME: broad sector (e.g., 'Information Technology', 'Consumer Discretionary', 'Financials', 'Health Care')
@@ -169,8 +168,8 @@ Use case2:
       MAX(bbg.companyName) AS companyName,
       MAX(f.filingDate) AS filingDate,
       MAX(f.unitTypeName) AS unitTypeName,
-      AVG(CASE WHEN f.dataItemValue = "Total Revenues" THEN f.collectionDataItemValue END) AS total_revenues,
-      AVG(CASE WHEN f.dataItemValue = "Gross Profit" THEN f.collectionDataItemValue END) AS gross_profit
+      AVG(CASE WHEN f.dataItemValue LIKE '%Revenue%' THEN f.collectionDataItemValue END) AS total_revenues,
+      AVG(CASE WHEN f.dataItemValue LIKE '%Gross Profit%' THEN f.collectionDataItemValue END) AS gross_profit
     FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
     LEFT JOIN `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg
       ON f.companyId = bbg.companyId
@@ -182,10 +181,10 @@ Use case2:
     WHERE f.periodTypeName = "Quarterly"
       AND c.isoCountry2 = "US"
       AND bbg.GICS_INDUSTRY_NAME = "Software"
-      AND f.dataItemValue IN ("Total Revenues", "Gross Profit")
+      AND (f.dataItemValue LIKE '%Revenue%' OR f.dataItemValue LIKE '%Gross Profit%')
     GROUP BY f.companyId
     HAVING total_revenues IS NOT NULL
-       AND gross_profit IS NOT NULL
+        OR gross_profit IS NOT NULL
     ORDER BY filingDate DESC
     LIMIT 100;
 
@@ -193,8 +192,8 @@ Use case3:
 - Example user query: Tesla: Capital Expenditure vs Cash from Operations over time.
 - Sample SQL output:
     SELECT f.companyId, filingDate, string_agg(distinct unitTypeName) as Scale, string_agg(distinct companyName) as Company_Name,
-    AVG(CASE WHEN dataItemValue = 'Capital Expenditure' THEN collectionDataItemValue END) AS capital_expenditure,
-    AVG(CASE WHEN dataItemValue = 'Cash from Operations' THEN collectionDataItemValue END) AS cash_from_operations
+    AVG(CASE WHEN dataItemValue LIKE '%Capital Expenditure%' OR dataItemValue LIKE '%Capex%' THEN collectionDataItemValue END) AS capital_expenditure,
+    AVG(CASE WHEN dataItemValue LIKE '%Cash from Operations%' OR dataItemValue LIKE '%Operating Cash Flow%' THEN collectionDataItemValue END) AS cash_from_operations
     FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
     left join `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg on f.companyId = bbg.companyId
     where filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 5 YEAR)
