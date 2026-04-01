@@ -53,15 +53,27 @@ def response_agent(state: AgentState) -> AgentState:
     log.info(f"[RESPOND] SQLData length: {len(sql_data)}")
     log.info(f"[RESPOND] pm_plan excerpt: {pm_plan[:400]}...")
 
+    # Short-circuit: regex-based check
     if needs_data and not data_fetched:
         log.warning("[RESPOND] Data was required but not fetched — returning honest failure")
-        content = (
-            "I wasn't able to retrieve the data needed to answer this accurately. "
-            "This could be due to an API limit or connection issue. Please try again in a moment."
-        )
         return {
             "messages": [],
-            "stream_chunks": [emit("response_content", content)],
+            "stream_chunks": [emit("response_content",
+                "I wasn't able to retrieve the data needed to answer this accurately. "
+                "This could be due to an API limit or connection issue. Please try again in a moment."
+            )],
+        }
+
+    # Short-circuit: fallback — SQL ran but returned no rows (catches truncated pm_plan edge case)
+    sql_attempted = bool(state.get("SQLQuery", "").strip())
+    if sql_attempted and not data_fetched:
+        log.warning("[RESPOND] SQL was executed but returned no data — returning honest failure")
+        return {
+            "messages": [],
+            "stream_chunks": [emit("response_content",
+                "I wasn't able to retrieve the data for this query. "
+                "The database may not have matching records for these filters. Please try a different query."
+            )],
         }
 
     # ── Build system prompt with state context ───────────────────────────────

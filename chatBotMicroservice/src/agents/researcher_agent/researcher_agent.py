@@ -69,10 +69,12 @@ def researcher_agent(state: AgentState) -> AgentState:
         sql_result = generate_sql_tool.invoke({"query": enriched_query})
         log.info(f"[RESEARCHER] SQL generated: {sql_result[:200]}...")
 
-        # Extract the actual SELECT statement, skipping any validation error/metadata lines
+        # Extract the SQL statement - handle both plain SELECT and CTEs (WITH ...)
         import re
+        # Try CTE first (WITH ...), then plain SELECT, skipping dry-run/validation metadata lines
+        cte_match = re.search(r'(WITH\s.+)', sql_result, re.DOTALL | re.IGNORECASE)
         select_match = re.search(r'(SELECT\s.+)', sql_result, re.DOTALL | re.IGNORECASE)
-        clean_sql = select_match.group(1).strip() if select_match else sql_result.strip()
+        clean_sql = (cte_match or select_match).group(1).strip() if (cte_match or select_match) else sql_result.strip()
 
         log.info(f"[RESEARCHER] SQL Query to Execute:\n{clean_sql}")
         log.info("[RESEARCHER] Step 2: Executing BigQuery...")

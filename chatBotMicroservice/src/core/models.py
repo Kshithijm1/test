@@ -29,7 +29,7 @@ def _chat(
 llm_fast = _chat("gemini-2.5-flash", 0.2, 256, 30, thinking_budget=0)
 
 # Medium — modest thinking
-llm_medium = _chat("gemini-2.5-flash", 0.5, 512, 60, thinking_budget=2048)
+llm_medium = _chat("gemini-2.5-flash", 0.5, 2048, 60, thinking_budget=2048)
 
 # Respond — full thinking
 llm_respond = _chat("gemini-2.5-pro", 0.7, 2048, 180, thinking_budget=8192)

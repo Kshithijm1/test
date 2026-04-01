@@ -98,6 +98,15 @@ IMPORTANT: If user asks for a metric (e.g., "Cost of Revenues"), try variations:
   1. First try exact match with proper capitalization
   2. If that might return NULLs, use LIKE pattern: WHERE dataItemValue LIKE '%Cost%Revenue%'
   3. Common synonyms: Revenue = Total Revenues, Operating Income = Operating Income (Loss)
+
+CRITICAL - GICS Classification (use the correct column for each level):
+  - GICS_SECTOR_NAME: broad sector (e.g., 'Information Technology', 'Consumer Discretionary', 'Financials', 'Health Care')
+  - GICS_INDUSTRY_GROUP_NAME: industry group (e.g., 'Software & Services', 'Technology Hardware & Equipment')
+  - GICS_INDUSTRY_NAME: specific industry (e.g., 'Software', 'Semiconductors', 'Banks')
+  - GICS_SUB_INDUSTRY_NAME: sub-industry (most granular)
+  Rule: If user says 'Software companies' → use GICS_INDUSTRY_NAME = 'Software'
+  Rule: If user says 'Consumer Discretionary' → use GICS_SECTOR_NAME = 'Consumer Discretionary'
+  Rule: If user says 'Tech companies' → use GICS_SECTOR_NAME = 'Information Technology'
 """
 
 ROLE = """
@@ -138,19 +147,45 @@ Use case1:
     ORDER BY filingDate;
 
 Use case2:
-- Example user query: Consumer Discretionary: Cost of Revenues vs Operating Income.
+- Example user query: US Software companies: Total Revenues vs Gross Profit (most recent quarter).
 - Sample SQL output:
-    SELECT f.companyId, filingDate, string_agg(distinct unitTypeName) as Scale, string_agg(distinct companyName) as Company_Name,
-    AVG(CASE WHEN dataItemValue = 'Cost of Revenue' THEN collectionDataItemValue END) AS cost_of_revenue,
-    AVG(CASE WHEN dataItemValue = 'Operating Income (Loss)' THEN collectionDataItemValue END) AS operating_income
+    WITH latest_quarter AS (
+      SELECT
+        f.companyId,
+        MAX(f.filingDate) AS filingDate
+      FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
+      LEFT JOIN `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg
+        ON f.companyId = bbg.companyId
+      LEFT JOIN `cbldt-b016-int-2e05.stg_ext_sgam_1832_sp_ist.CountryGeo` c
+        ON f.countryId = c.countryId
+      WHERE f.periodTypeName = "Quarterly"
+        AND c.isoCountry2 = "US"
+        AND bbg.GICS_INDUSTRY_NAME = "Software"
+        AND f.filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)
+      GROUP BY f.companyId
+    )
+    SELECT
+      f.companyId,
+      MAX(bbg.companyName) AS companyName,
+      MAX(f.filingDate) AS filingDate,
+      MAX(f.unitTypeName) AS unitTypeName,
+      AVG(CASE WHEN f.dataItemValue = "Total Revenues" THEN f.collectionDataItemValue END) AS total_revenues,
+      AVG(CASE WHEN f.dataItemValue = "Gross Profit" THEN f.collectionDataItemValue END) AS gross_profit
     FROM `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.financials_dt` f
-    left join `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg on f.companyId = bbg.companyId
-    left join `cbldt-b016-int-2e05.stg_ext_sgam_1832_sp_ist.CountryGeo` c on f.countryId = c.countryId
-    where filingDate >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)
-    AND c.isoCountry2 = "US"
-    AND periodTypeName = "Quarterly"
-    AND bbg.GICS_SECTOR_NAME = "Consumer Discretionary"
-    GROUP BY companyId, filingDate
+    LEFT JOIN `cbldt-b016-int-2e05.dw_ext_sgam_1832_sp_ist.mv_bbg_sp_trade` bbg
+      ON f.companyId = bbg.companyId
+    LEFT JOIN `cbldt-b016-int-2e05.stg_ext_sgam_1832_sp_ist.CountryGeo` c
+      ON f.countryId = c.countryId
+    INNER JOIN latest_quarter lq
+      ON f.companyId = lq.companyId
+     AND f.filingDate = lq.filingDate
+    WHERE f.periodTypeName = "Quarterly"
+      AND c.isoCountry2 = "US"
+      AND bbg.GICS_INDUSTRY_NAME = "Software"
+      AND f.dataItemValue IN ("Total Revenues", "Gross Profit")
+    GROUP BY f.companyId
+    HAVING total_revenues IS NOT NULL
+       AND gross_profit IS NOT NULL
     ORDER BY filingDate DESC
     LIMIT 100;
 
