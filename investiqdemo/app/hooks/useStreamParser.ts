@@ -30,6 +30,7 @@ export interface DisplayChunk {
 }
 
 export interface AgentStatusDetail {
+	plan_summary?: string;
 	sql?: string;
 	preview?: Record<string, any>[];
 	columns?: string[];

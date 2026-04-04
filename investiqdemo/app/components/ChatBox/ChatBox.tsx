@@ -1,7 +1,7 @@
 "use client";
 import { Box, Typography } from "@mui/material";
 import ReactMarkdown from "react-markdown";
-import { ChatMessage, AgentStep } from "../../page";
+import { ChatMessage } from "../../page";
 import { useEffect, useRef } from "react";
 
 
@@ -99,8 +99,8 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                         alignItems: msg.type === "user" ? "flex-end" : "flex-start",
                     }}
                 >
-                    {/* Role label */}
-                    {msg.type !== "thinking" && msg.type !== "status" && (
+                    {/* Role label — only for user and bot messages */}
+                    {(msg.type === "user" || msg.type === "bot") && (
                         <Box
                             sx={{
                                 fontSize: "0.62rem",
@@ -174,229 +174,170 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                                 fontStyle: "italic",
                                 width: "100%",
                             }),
-                            ...(msg.type === "status" && {
-                                bgcolor: "white",
-                                border: "1px solid #e3eaf5",
-                                color: "#1a1a2e",
-                                px: 2,
-                                py: 1.5,
-                                borderRadius: "2px 12px 12px 12px",
-                                fontSize: "0.78rem",
-                                lineHeight: 1.6,
+                            ...(msg.type === "agent_step" && {
+                                bgcolor: "transparent",
+                                py: 0.25,
+                                px: 0.5,
                                 width: "100%",
-                                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                            }),
+                            ...(msg.type === "agent_output" && {
+                                bgcolor: "transparent",
+                                py: 0,
+                                px: 0.5,
+                                width: "100%",
                             }),
                         }}
                     >
-                        {/* Agent status steps */}
-                    {msg.type === "status" && (() => {
-                        const steps = msg.steps || [];
-                        const allDone = chatMessages.slice(index + 1).some((m) => m.type === "bot");
-                        const hasActiveStep = steps.some((s: AgentStep) => s.status === "started");
-
-                        return (
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                                {steps.map((step: AgentStep, i: number) => (
-                                    <Box key={i} sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-                                        {/* Step header row */}
-                                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                            {step.status === "completed" ? (
-                                                <Box sx={{ width: 14, height: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                                        <circle cx="7" cy="7" r="7" fill="#22c55e" />
-                                                        <path d="M4 7l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                </Box>
-                                            ) : (
-                                                <Box sx={{
-                                                    width: 14, height: 14, flexShrink: 0, borderRadius: "50%",
-                                                    border: "2px solid #1976d2",
-                                                    animation: "spin 1s linear infinite",
-                                                    borderTopColor: "transparent",
-                                                    "@keyframes spin": { "0%": { transform: "rotate(0deg)" }, "100%": { transform: "rotate(360deg)" } },
-                                                }} />
-                                            )}
-                                            <Box sx={{ display: "flex", flexDirection: "column" }}>
-                                                <Box sx={{
-                                                    fontSize: "0.72rem", fontWeight: 600,
-                                                    color: step.status === "completed" ? "#1a1a2e" : "#1976d2",
-                                                }}>
-                                                    {step.agent}
-                                                </Box>
-                                                <Box sx={{ fontSize: "0.65rem", color: "#90a4c0", lineHeight: 1.3 }}>
-                                                    {step.message}
-                                                </Box>
-                                            </Box>
-                                        </Box>
-
-                                        {/* Detail blocks (SQL, data preview, config) */}
-                                        {step.detail && (
-                                            <Box sx={{ ml: "22px", display: "flex", flexDirection: "column", gap: 0.75 }}>
-                                                {/* SQL Query box */}
-                                                {step.detail.sql && (
-                                                    <Box sx={{
-                                                        bgcolor: "#1a1a2e", color: "#a5d6ff", p: 1.25,
-                                                        borderRadius: "6px", fontSize: "0.65rem",
-                                                        fontFamily: "'Fira Code', 'Consolas', monospace",
-                                                        lineHeight: 1.5, overflowX: "auto",
-                                                        whiteSpace: "pre-wrap", wordBreak: "break-word",
-                                                        maxHeight: 160, overflowY: "auto",
-                                                        "&::-webkit-scrollbar": { width: "4px", height: "4px" },
-                                                        "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
-                                                    }}>
-                                                        <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                                            SQL Query
-                                                        </Box>
-                                                        {step.detail.sql}
-                                                    </Box>
-                                                )}
-
-                                                {/* Data preview table */}
-                                                {step.detail.preview && step.detail.columns && (
-                                                    <Box sx={{
-                                                        border: "1px solid #e3eaf5", borderRadius: "6px",
-                                                        overflow: "hidden", fontSize: "0.62rem",
-                                                    }}>
-                                                        <Box sx={{
-                                                            fontSize: "0.58rem", color: "#6b7280", px: 1, py: 0.5,
-                                                            bgcolor: "#f8fafd", borderBottom: "1px solid #e3eaf5",
-                                                            textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600,
-                                                        }}>
-                                                            Data Preview ({step.detail.total_rows} rows total)
-                                                        </Box>
-                                                        <Box sx={{ overflowX: "auto" }}>
-                                                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                                                <thead>
-                                                                    <tr>
-                                                                        {step.detail.columns.map((col: string) => (
-                                                                            <th key={col} style={{
-                                                                                padding: "4px 8px", textAlign: "left",
-                                                                                borderBottom: "1px solid #e3eaf5",
-                                                                                bgcolor: "#f8fafd", fontWeight: 600,
-                                                                                fontSize: "0.6rem", color: "#1a1a2e",
-                                                                                whiteSpace: "nowrap",
-                                                                            }}>{col}</th>
-                                                                        ))}
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {step.detail.preview.map((row: Record<string, any>, ri: number) => (
-                                                                        <tr key={ri} style={{ backgroundColor: ri % 2 === 0 ? "white" : "#f8fafd" }}>
-                                                                            {step.detail!.columns!.map((col: string) => (
-                                                                                <td key={col} style={{
-                                                                                    padding: "3px 8px", fontSize: "0.6rem",
-                                                                                    color: "#4a5568", whiteSpace: "nowrap",
-                                                                                    borderBottom: "1px solid #f0f4fb",
-                                                                                }}>
-                                                                                    {row[col] != null ? String(row[col]) : "—"}
-                                                                                </td>
-                                                                            ))}
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </Box>
-                                                    </Box>
-                                                )}
-
-                                                {/* Chart config JSON */}
-                                                {(step.detail.config || step.detail.config_raw) && (
-                                                    <Box sx={{
-                                                        bgcolor: "#1a1a2e", color: "#c4b5fd", p: 1.25,
-                                                        borderRadius: "6px", fontSize: "0.65rem",
-                                                        fontFamily: "'Fira Code', 'Consolas', monospace",
-                                                        lineHeight: 1.5, overflowX: "auto",
-                                                        whiteSpace: "pre-wrap", wordBreak: "break-word",
-                                                        maxHeight: 140, overflowY: "auto",
-                                                        "&::-webkit-scrollbar": { width: "4px", height: "4px" },
-                                                        "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
-                                                    }}>
-                                                        <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                                            Chart Config
-                                                        </Box>
-                                                        {step.detail.config
-                                                            ? JSON.stringify(step.detail.config, null, 2)
-                                                            : step.detail.config_raw}
-                                                    </Box>
-                                                )}
-                                            </Box>
-                                        )}
+                        {/* ── agent_step: "Agent thinking..." / "Agent done" line ── */}
+                        {msg.type === "agent_step" && (
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                {msg.agentStatus === "completed" ? (
+                                    <Box sx={{ width: 14, height: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                            <circle cx="7" cy="7" r="7" fill="#22c55e" />
+                                            <path d="M4 7l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
                                     </Box>
-                                ))}
-                                {!allDone && !hasActiveStep && steps.length === 0 && (
-                                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                        {[0, 1, 2].map((i) => (
-                                            <Box key={i} sx={{
-                                                width: 4, height: 4, borderRadius: "50%", bgcolor: "#1976d2",
-                                                animation: "pulse 1.2s ease-in-out infinite",
-                                                animationDelay: `${i * 0.2}s`,
-                                                "@keyframes pulse": {
-                                                    "0%, 100%": { opacity: 0.3, transform: "scale(0.8)" },
-                                                    "50%": { opacity: 1, transform: "scale(1)" },
-                                                },
-                                            }} />
-                                        ))}
-                                        <Box sx={{ fontSize: "0.65rem", color: "#1976d2", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                            Starting...
-                                        </Box>
-                                    </Box>
+                                ) : (
+                                    <Box sx={{
+                                        width: 14, height: 14, flexShrink: 0, borderRadius: "50%",
+                                        border: "2px solid #1976d2",
+                                        animation: "spin 1s linear infinite",
+                                        borderTopColor: "transparent",
+                                        "@keyframes spin": { "0%": { transform: "rotate(0deg)" }, "100%": { transform: "rotate(360deg)" } },
+                                    }} />
                                 )}
+                                <Box sx={{
+                                    fontSize: "0.75rem", fontWeight: 600,
+                                    color: msg.agentStatus === "completed" ? "#1a1a2e" : "#1976d2",
+                                }}>
+                                    {msg.agentName}{msg.agentStatus === "started" ? " thinking..." : " done"}
+                                </Box>
                             </Box>
-                        );
-                    })()}
+                        )}
 
-                    {/* Legacy thinking bubble (kept for backward compat) */}
-                    {msg.type === "thinking" && (() => {
-                            const isComplete = chatMessages
-                                .slice(index + 1)
-                                .some((m) => m.type === "bot");
-
+                        {/* ── agent_output: detail blocks (plan, SQL, table, config) ── */}
+                        {msg.type === "agent_output" && (() => {
+                            const d = msg.detail;
                             return (
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
-                                    {!isComplete && [0, 1, 2].map((i) => (
-                                        <Box
-                                            key={i}
-                                            sx={{
-                                                width: 4,
-                                                height: 4,
-                                                borderRadius: "50%",
-                                                bgcolor: "#1976d2",
-                                                animation: "pulse 1.2s ease-in-out infinite",
-                                                animationDelay: `${i * 0.2}s`,
-                                                "@keyframes pulse": {
-                                                    "0%, 100%": { opacity: 0.3, transform: "scale(0.8)" },
-                                                    "50%": { opacity: 1, transform: "scale(1)" },
-                                                },
-                                            }}
-                                        />
-                                    ))}
-                                    <Box
-                                        sx={{
-                                            fontSize: "0.65rem",
-                                            color: "#1976d2",
-                                            letterSpacing: "0.06em",
-                                            textTransform: "uppercase",
-                                            fontWeight: 600,
-                                            fontStyle: "normal",
-                                        }}
-                                    >
-                                        {isComplete ? "Reasoning" : "Reasoning..."}
-                                    </Box>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75, width: "100%" }}>
+                                    {/* Plan summary text */}
+                                    {!d && msg.text && (
+                                        <Box sx={{
+                                            bgcolor: "#f8fafd", border: "1px solid #e3eaf5",
+                                            borderRadius: "6px", px: 1.5, py: 1,
+                                            fontSize: "0.68rem", color: "#4a5568",
+                                            lineHeight: 1.5, whiteSpace: "pre-wrap",
+                                            maxHeight: 160, overflowY: "auto",
+                                            "&::-webkit-scrollbar": { width: "4px" },
+                                            "&::-webkit-scrollbar-thumb": { bgcolor: "#c5d8f5", borderRadius: "4px" },
+                                        }}>
+                                            {msg.text}
+                                        </Box>
+                                    )}
+
+                                    {/* SQL Query box */}
+                                    {d?.sql && (
+                                        <Box sx={{
+                                            bgcolor: "#1a1a2e", color: "#a5d6ff", p: 1.25,
+                                            borderRadius: "6px", fontSize: "0.65rem",
+                                            fontFamily: "'Fira Code', 'Consolas', monospace",
+                                            lineHeight: 1.5, overflowX: "auto",
+                                            whiteSpace: "pre-wrap", wordBreak: "break-word",
+                                            maxHeight: 160, overflowY: "auto",
+                                            "&::-webkit-scrollbar": { width: "4px", height: "4px" },
+                                            "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
+                                        }}>
+                                            <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                                SQL Query
+                                            </Box>
+                                            {d.sql}
+                                        </Box>
+                                    )}
+
+                                    {/* Data preview table */}
+                                    {d?.preview && d?.columns && (
+                                        <Box sx={{
+                                            border: "1px solid #e3eaf5", borderRadius: "6px",
+                                            overflow: "hidden", fontSize: "0.62rem",
+                                        }}>
+                                            <Box sx={{
+                                                fontSize: "0.58rem", color: "#6b7280", px: 1, py: 0.5,
+                                                bgcolor: "#f8fafd", borderBottom: "1px solid #e3eaf5",
+                                                textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600,
+                                            }}>
+                                                Data Preview ({d.total_rows} rows total — showing first {d.preview.length})
+                                            </Box>
+                                            <Box sx={{ overflowX: "auto" }}>
+                                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                                    <thead>
+                                                        <tr>
+                                                            {d.columns.map((col: string) => (
+                                                                <th key={col} style={{
+                                                                    padding: "4px 8px", textAlign: "left",
+                                                                    borderBottom: "1px solid #e3eaf5",
+                                                                    background: "#f8fafd", fontWeight: 600,
+                                                                    fontSize: "0.6rem", color: "#1a1a2e",
+                                                                    whiteSpace: "nowrap",
+                                                                }}>{col}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {d.preview.map((row: Record<string, any>, ri: number) => (
+                                                            <tr key={ri} style={{ backgroundColor: ri % 2 === 0 ? "white" : "#f8fafd" }}>
+                                                                {d.columns!.map((col: string) => (
+                                                                    <td key={col} style={{
+                                                                        padding: "3px 8px", fontSize: "0.6rem",
+                                                                        color: "#4a5568", whiteSpace: "nowrap",
+                                                                        borderBottom: "1px solid #f0f4fb",
+                                                                    }}>
+                                                                        {row[col] != null ? String(row[col]) : "—"}
+                                                                    </td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </Box>
+                                        </Box>
+                                    )}
+
+                                    {/* Chart config JSON */}
+                                    {(d?.config || d?.config_raw) && (
+                                        <Box sx={{
+                                            bgcolor: "#1a1a2e", color: "#c4b5fd", p: 1.25,
+                                            borderRadius: "6px", fontSize: "0.65rem",
+                                            fontFamily: "'Fira Code', 'Consolas', monospace",
+                                            lineHeight: 1.5, overflowX: "auto",
+                                            whiteSpace: "pre-wrap", wordBreak: "break-word",
+                                            maxHeight: 160, overflowY: "auto",
+                                            "&::-webkit-scrollbar": { width: "4px", height: "4px" },
+                                            "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
+                                        }}>
+                                            <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                                Chart Config
+                                            </Box>
+                                            {d.config
+                                                ? JSON.stringify(d.config, null, 2)
+                                                : d.config_raw}
+                                        </Box>
+                                    )}
                                 </Box>
                             );
                         })()}
 
-
-                        {msg.type === "bot" ? (
+                        {/* ── bot: markdown response ── */}
+                        {msg.type === "bot" && (
                             <ReactMarkdown>{msg.text || "..."}</ReactMarkdown>
-                        ) : msg.type !== "status" ? (
-                            <Box
-                                component="span"
-                                sx={{ whiteSpace: "pre-wrap" }}
-                            >
+                        )}
+
+                        {/* ── user: plain text ── */}
+                        {msg.type === "user" && (
+                            <Box component="span" sx={{ whiteSpace: "pre-wrap" }}>
                                 {msg.text}
                             </Box>
-                        ) : null}
+                        )}
                     </Box>
                 </Box>
             ))}

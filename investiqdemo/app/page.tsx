@@ -125,17 +125,12 @@ function buildLayout(config: any): any {
 }
 
 
-export interface AgentStep {
-    agent: string;
-    status: "started" | "completed";
-    message: string;
-    detail?: AgentStatusDetail;
-}
-
 export interface ChatMessage {
-    type: "user" | "bot" | "thinking" | "status";
+    type: "user" | "bot" | "thinking" | "agent_step" | "agent_output";
     text: string;
-    steps?: AgentStep[];
+    agentName?: string;
+    agentStatus?: "started" | "completed";
+    detail?: AgentStatusDetail;
 }
 
 
@@ -235,7 +230,6 @@ export default function Home() {
         setChatMessages((prev) => [
             ...prev,
             { text: prompt, type: "user" },
-            { text: "", type: "status", steps: [] },
         ]);
 
 
@@ -267,32 +261,46 @@ export default function Home() {
                 onAgentStatus: (payload) => {
                     setChatMessages((prev) => {
                         const updated = [...prev];
-                        // Find the last status message
-                        const statusIdx = updated.findLastIndex((m) => m.type === "status");
-                        if (statusIdx === -1) return prev;
-                        const statusMsg = { ...updated[statusIdx] };
-                        const steps = [...(statusMsg.steps || [])];
 
                         if (payload.status === "started") {
-                            steps.push({ agent: payload.agent, status: "started", message: payload.message });
+                            // Push a new "thinking..." line
+                            updated.push({
+                                type: "agent_step",
+                                text: payload.message,
+                                agentName: payload.agent,
+                                agentStatus: "started",
+                            });
                         } else if (payload.status === "completed") {
-                            const stepData: AgentStep = {
-                                agent: payload.agent,
-                                status: "completed",
-                                message: payload.message,
-                                detail: payload.detail,
-                            };
-                            // Update the matching started step to completed
-                            const idx = steps.findLastIndex((s) => s.agent === payload.agent && s.status === "started");
+                            // Find the matching "started" line and flip it to "completed"
+                            const idx = updated.findLastIndex(
+                                (m) => m.type === "agent_step" && m.agentName === payload.agent && m.agentStatus === "started"
+                            );
                             if (idx !== -1) {
-                                steps[idx] = stepData;
-                            } else {
-                                steps.push(stepData);
+                                updated[idx] = { ...updated[idx], agentStatus: "completed", text: payload.message };
+                            }
+
+                            // Push detail output messages
+                            const d = payload.detail;
+                            if (d) {
+                                // PM plan summary
+                                if (d.plan_summary) {
+                                    updated.push({ type: "agent_output", text: d.plan_summary });
+                                }
+                                // SQL query
+                                if (d.sql) {
+                                    updated.push({ type: "agent_output", text: "", detail: { sql: d.sql } });
+                                }
+                                // Data preview table
+                                if (d.preview && d.columns) {
+                                    updated.push({ type: "agent_output", text: "", detail: { preview: d.preview, columns: d.columns, total_rows: d.total_rows } });
+                                }
+                                // Chart config
+                                if (d.config || d.config_raw) {
+                                    updated.push({ type: "agent_output", text: "", detail: { config: d.config, config_raw: d.config_raw } });
+                                }
                             }
                         }
 
-                        statusMsg.steps = steps;
-                        updated[statusIdx] = statusMsg;
                         return updated;
                     });
                 },

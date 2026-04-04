@@ -272,6 +272,12 @@ def _build_agent_summary(node_name: str, node_state: dict) -> str:
 
 def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
     """Build optional rich detail payload for an agent's completion event."""
+    if node_name == "project_manager_agent":
+        plan = node_state.get("pm_plan", "")
+        if plan:
+            return {"plan_summary": plan.strip()}
+        return None
+
     if node_name == "researcher_agent":
         detail: dict = {}
         sql_query = node_state.get("SQLQuery", "")
