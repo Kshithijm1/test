@@ -76,7 +76,7 @@ export async function parseStream(
 	const decoder = new TextDecoder();
 	let lineBuffer = "";
 
-	const dispatch = (parsed: StreamChunk) => {
+	const dispatch = async (parsed: StreamChunk) => {
 		if (parsed.type === "thinking_content") {
 			handlers.onThinking(parsed.data);
 		} else if (parsed.type === "response_content") {
@@ -90,6 +90,8 @@ export async function parseStream(
 		} else if (parsed.type === "agent_status") {
 			console.log("[useStreamParser] Agent status:", (parsed as AgentStatusChunk).data);
 			handlers.onAgentStatus?.((parsed as AgentStatusChunk).data);
+			// Yield to React so it renders the status update before the next event
+			await new Promise((r) => setTimeout(r, 30));
 		}
 	};
 
@@ -106,7 +108,7 @@ export async function parseStream(
 			if (!line.trim()) continue;
 			try {
 				const parsed = JSON.parse(line) as StreamChunk;
-				dispatch(parsed);
+				await dispatch(parsed);
 			} catch {
 				console.warn("[useStreamParser] Failed to parse chunk:", line);
 			}
@@ -117,7 +119,7 @@ export async function parseStream(
 	if (lineBuffer.trim()) {
 		try {
 			const parsed = JSON.parse(lineBuffer) as StreamChunk;
-			dispatch(parsed);
+			await dispatch(parsed);
 		} catch {
 			console.warn(
 				"[useStreamParser] Leftover unparseable buffer:",

@@ -141,6 +141,7 @@ async def chat(req: ChatRequest):
                         })
                         log.info(f"[STREAM] Agent started: {meta['label']}")
                         yield status_chunk
+                        await asyncio.sleep(0.05)  # flush to client before next event
 
                 # ── Agent END: emit completion status with summary ────────────
                 elif kind == "on_chain_end":
@@ -176,6 +177,7 @@ async def chat(req: ChatRequest):
                         status_chunk = emit("agent_status", payload)
                         log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
                         yield status_chunk
+                        await asyncio.sleep(0.05)  # flush to client before next event
 
                     # Collect non-thinking, non-sql_data stream_chunks for ordered flush
                     for chunk in node_state.get("stream_chunks", []):
