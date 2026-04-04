@@ -17,7 +17,7 @@ router = APIRouter()
 
 # Agent display names and descriptions for frontend status updates
 AGENT_META = {
-    "project_manager_agent": {
+    "project_manager": {
         "label": "Analysis Agent",
         "start": "Analyzing your query and building execution plan...",
     },
@@ -113,38 +113,39 @@ async def chat(req: ChatRequest):
         }
 
         node_chunks: dict[str, list[str]] = {}
-        started_nodes: set[str] = set()
         completed_nodes: set[str] = set()
 
         # Keys that identify the *real* node-level output (vs internal chain outputs)
         NODE_OUTPUT_KEYS = {
-            "project_manager_agent": "pm_plan",
+            "project_manager": "pm_plan",
             "researcher_agent": "SQLQuery",
             "response_agent": "stream_chunks",
             "display_agent": "display_results",
         }
 
+        # Ordered agent execution sequence (matches graph edges)
+        AGENT_ORDER = ["project_manager", "researcher_agent", "response_agent", "display_agent"]
+
+        def _emit_started(node_name: str) -> str:
+            """Build a 'started' status event for the given node."""
+            meta = AGENT_META[node_name]
+            log.info(f"[STREAM] Agent started: {meta['label']}")
+            return emit("agent_status", {
+                "agent": meta["label"],
+                "status": "started",
+                "message": meta["start"],
+            })
+
+        # ── Immediately emit "started" for the first agent ────────────────
+        yield _emit_started(AGENT_ORDER[0])
+        await asyncio.sleep(0.05)
+
         try:
             async for event in agent_graph.astream_events(initial_state, version="v2"):
                 kind = event["event"]
 
-                # ── Agent START: emit status when a known node begins ─────────
-                if kind == "on_chain_start":
-                    node_name = event.get("metadata", {}).get("langgraph_node", "")
-                    if node_name in AGENT_META and node_name not in started_nodes:
-                        started_nodes.add(node_name)
-                        meta = AGENT_META[node_name]
-                        status_chunk = emit("agent_status", {
-                            "agent": meta["label"],
-                            "status": "started",
-                            "message": meta["start"],
-                        })
-                        log.info(f"[STREAM] Agent started: {meta['label']}")
-                        yield status_chunk
-                        await asyncio.sleep(0.05)  # flush to client before next event
-
                 # ── Agent END: emit completion status with summary ────────────
-                elif kind == "on_chain_end":
+                if kind == "on_chain_end":
                     node_name = event.get("metadata", {}).get("langgraph_node", "")
                     if not node_name:
                         continue
@@ -159,25 +160,35 @@ async def chat(req: ChatRequest):
                         continue  # internal chain end — skip
                     if node_name in completed_nodes:
                         continue  # already emitted for this node
-                    if node_name in AGENT_META:
-                        completed_nodes.add(node_name)
+                    if node_name not in AGENT_META:
+                        continue
+                    completed_nodes.add(node_name)
 
-                    # Build completion summary + detail payload per agent
-                    if node_name in AGENT_META:
-                        meta = AGENT_META[node_name]
-                        summary = _build_agent_summary(node_name, node_state)
-                        detail = _build_agent_detail(node_name, node_state)
-                        payload: dict = {
-                            "agent": meta["label"],
-                            "status": "completed",
-                            "message": summary,
-                        }
-                        if detail:
-                            payload["detail"] = detail
-                        status_chunk = emit("agent_status", payload)
-                        log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
-                        yield status_chunk
-                        await asyncio.sleep(0.05)  # flush to client before next event
+                    # Build and emit completion event
+                    meta = AGENT_META[node_name]
+                    summary = _build_agent_summary(node_name, node_state)
+                    detail = _build_agent_detail(node_name, node_state)
+                    payload: dict = {
+                        "agent": meta["label"],
+                        "status": "completed",
+                        "message": summary,
+                    }
+                    if detail:
+                        payload["detail"] = detail
+                    status_chunk = emit("agent_status", payload)
+                    log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
+                    yield status_chunk
+                    await asyncio.sleep(0.05)
+
+                    # ── Proactively emit "started" for the NEXT agent ─────────
+                    try:
+                        cur_idx = AGENT_ORDER.index(node_name)
+                        if cur_idx + 1 < len(AGENT_ORDER):
+                            next_node = AGENT_ORDER[cur_idx + 1]
+                            yield _emit_started(next_node)
+                            await asyncio.sleep(0.05)
+                    except ValueError:
+                        pass
 
                     # Collect non-thinking, non-sql_data stream_chunks for ordered flush
                     for chunk in node_state.get("stream_chunks", []):
@@ -241,7 +252,7 @@ async def chat(req: ChatRequest):
 
 def _build_agent_summary(node_name: str, node_state: dict) -> str:
     """Extract a short human-readable summary from an agent's output state."""
-    if node_name == "project_manager_agent":
+    if node_name == "project_manager":
         plan = node_state.get("pm_plan", "")
         parts = []
         for label in ("USE_CASE", "CHART_TYPE", "OUTPUT_FORMAT"):
@@ -274,7 +285,7 @@ def _build_agent_summary(node_name: str, node_state: dict) -> str:
 
 def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
     """Build optional rich detail payload for an agent's completion event."""
-    if node_name == "project_manager_agent":
+    if node_name == "project_manager":
         plan = node_state.get("pm_plan", "")
         if plan:
             return {"plan_summary": plan.strip()}
