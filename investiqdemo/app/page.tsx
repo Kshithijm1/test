@@ -145,6 +145,7 @@ export default function Home() {
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const sqlDataRef = useRef<Record<string, any>[]>([]);
+    const abortControllerRef = useRef<AbortController | null>(null);
     const chartConfigRef = useRef<any>(null);
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
 
@@ -230,10 +231,12 @@ export default function Home() {
         setChatMessages((prev) => [
             ...prev,
             { text: prompt, type: "user" },
+            { text: "", type: "thinking" },
         ]);
 
 
         const controller = new AbortController();
+        abortControllerRef.current = controller;
         const timeoutId = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
         let botSeeded = false;
 
@@ -260,7 +263,8 @@ export default function Home() {
 
                 onAgentStatus: (payload) => {
                     setChatMessages((prev) => {
-                        const updated = [...prev];
+                        // Remove the initial "thinking" placeholder on first agent event
+                        const updated = prev.filter((m) => m.type !== "thinking");
 
                         if (payload.status === "started") {
                             // Push a new "thinking..." line
@@ -355,9 +359,14 @@ export default function Home() {
             });
         } finally {
             clearTimeout(timeoutId);
+            abortControllerRef.current = null;
             setIsLoading(false);
         }
     };
+
+    const handleStop = useCallback(() => {
+        abortControllerRef.current?.abort();
+    }, []);
 
 
     // ── Status indicator config ───────────────────────────────────────────────
@@ -540,6 +549,8 @@ export default function Home() {
                         <InputBox
                             handleSubmit={handleSubmit}
                             disabled={isLoading}
+                            isLoading={isLoading}
+                            onStop={handleStop}
                         />
                     </Box>
                 </Box>

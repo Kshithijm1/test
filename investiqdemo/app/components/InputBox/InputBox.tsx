@@ -2,13 +2,16 @@
 import { Box, IconButton, Tooltip } from "@mui/material";
 import { useState, useRef, KeyboardEvent } from "react";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import StopIcon from "@mui/icons-material/Stop";
 
 interface InputBoxProps {
     handleSubmit: (prompt: string) => void;
     disabled?: boolean;
+    isLoading?: boolean;
+    onStop?: () => void;
 }
 
-export default function InputBox({ handleSubmit, disabled = false }: InputBoxProps) {
+export default function InputBox({ handleSubmit, disabled = false, isLoading = false, onStop }: InputBoxProps) {
     const [value, setValue] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -86,27 +89,48 @@ export default function InputBox({ handleSubmit, disabled = false }: InputBoxPro
                         cursor: disabled ? "not-allowed" : "text",
                     }}
                 />
-                <Tooltip title={disabled ? "Waiting..." : "Send"}>
+                <Tooltip title={isLoading ? "Stop" : disabled ? "Waiting..." : "Send"}>
                     <span>
-                        <IconButton
-                            onClick={submit}
-                            disabled={disabled}
-                            sx={{
-                                position: "absolute",
-                                bottom: 10,
-                                right: 10,
-                                bgcolor: disabled ? "#90a4c0" : "#1976d2",
-                                color: "white",
-                                width: 32,
-                                height: 32,
-                                zIndex: 20,
-                                "&:hover": { bgcolor: disabled ? "#90a4c0" : "#1565c0" },
-                                boxShadow: "0 2px 8px rgba(25,118,210,0.3)",
-                                transition: "all 0.15s",
-                            }}
-                        >
-                            <ArrowUpwardIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
+                        {isLoading ? (
+                            <IconButton
+                                onClick={onStop}
+                                sx={{
+                                    position: "absolute",
+                                    bottom: 10,
+                                    right: 10,
+                                    bgcolor: "#ef4444",
+                                    color: "white",
+                                    width: 32,
+                                    height: 32,
+                                    zIndex: 20,
+                                    "&:hover": { bgcolor: "#dc2626" },
+                                    boxShadow: "0 2px 8px rgba(239,68,68,0.35)",
+                                    transition: "all 0.15s",
+                                }}
+                            >
+                                <StopIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        ) : (
+                            <IconButton
+                                onClick={submit}
+                                disabled={disabled}
+                                sx={{
+                                    position: "absolute",
+                                    bottom: 10,
+                                    right: 10,
+                                    bgcolor: disabled ? "#90a4c0" : "#1976d2",
+                                    color: "white",
+                                    width: 32,
+                                    height: 32,
+                                    zIndex: 20,
+                                    "&:hover": { bgcolor: disabled ? "#90a4c0" : "#1565c0" },
+                                    boxShadow: "0 2px 8px rgba(25,118,210,0.3)",
+                                    transition: "all 0.15s",
+                                }}
+                            >
+                                <ArrowUpwardIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                        )}
                     </span>
                 </Tooltip>
             </Box>

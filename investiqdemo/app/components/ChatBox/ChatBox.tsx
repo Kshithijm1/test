@@ -28,7 +28,7 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                 py: 2,
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
+                gap: 1.5,
                 "&::-webkit-scrollbar": { width: "6px" },
                 "&::-webkit-scrollbar-track": { bgcolor: "transparent" },
                 "&::-webkit-scrollbar-thumb": {
@@ -97,6 +97,15 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                         display: "flex",
                         flexDirection: "column",
                         alignItems: msg.type === "user" ? "flex-end" : "flex-start",
+                        animation: "fadeSlideIn 0.35s ease-out both",
+                        "@keyframes fadeSlideIn": {
+                            "0%": { opacity: 0, transform: "translateY(10px)" },
+                            "100%": { opacity: 1, transform: "translateY(0)" },
+                        },
+                        // Tighten spacing for consecutive agent messages
+                        ...(( msg.type === "agent_step" || msg.type === "agent_output") && {
+                            mt: -1,
+                        }),
                     }}
                 >
                     {/* Role label — only for user and bot messages */}
@@ -163,15 +172,9 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                                 "& strong": { color: "#1a1a2e" },
                             }),
                             ...(msg.type === "thinking" && {
-                                bgcolor: "rgba(25,118,210,0.04)",
-                                border: "1px dashed #90c2ff",
-                                color: "#90a4c0",
-                                px: 2,
-                                py: 1.25,
-                                borderRadius: "2px 12px 12px 12px",
-                                fontSize: "0.78rem",
-                                lineHeight: 1.6,
-                                fontStyle: "italic",
+                                bgcolor: "transparent",
+                                py: 0.5,
+                                px: 0.5,
                                 width: "100%",
                             }),
                             ...(msg.type === "agent_step" && {
@@ -188,6 +191,24 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                             }),
                         }}
                     >
+                        {/* ── thinking: pulsing dots bridge before first agent event ── */}
+                        {msg.type === "thinking" && (
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                <Box sx={{
+                                    width: 14, height: 14, flexShrink: 0, borderRadius: "50%",
+                                    border: "2px solid #1976d2",
+                                    animation: "spin 1s linear infinite",
+                                    borderTopColor: "transparent",
+                                    "@keyframes spin": { "0%": { transform: "rotate(0deg)" }, "100%": { transform: "rotate(360deg)" } },
+                                }} />
+                                <Box sx={{
+                                    fontSize: "0.75rem", fontWeight: 600, color: "#1976d2",
+                                }}>
+                                    Processing...
+                                </Box>
+                            </Box>
+                        )}
+
                         {/* ── agent_step: "Agent thinking..." / "Agent done" line ── */}
                         {msg.type === "agent_step" && (
                             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
