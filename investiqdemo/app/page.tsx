@@ -10,7 +10,7 @@ import {
     ScatterPlotGraph,
     ChartData,
 } from "./classes/charts";
-import { parseStream, DisplayModule } from "./hooks/useStreamParser";
+import { parseStream, DisplayModule, AgentStatusDetail } from "./hooks/useStreamParser";
 
 
 /**
@@ -125,9 +125,17 @@ function buildLayout(config: any): any {
 }
 
 
+export interface AgentStep {
+    agent: string;
+    status: "started" | "completed";
+    message: string;
+    detail?: AgentStatusDetail;
+}
+
 export interface ChatMessage {
-    type: "user" | "bot" | "thinking";
+    type: "user" | "bot" | "thinking" | "status";
     text: string;
+    steps?: AgentStep[];
 }
 
 
@@ -227,7 +235,7 @@ export default function Home() {
         setChatMessages((prev) => [
             ...prev,
             { text: prompt, type: "user" },
-            { text: "", type: "thinking" },
+            { text: "", type: "status", steps: [] },
         ]);
 
 
@@ -253,20 +261,44 @@ export default function Home() {
                 onSqlData: (payload) => {
                     console.log("[page] Received SQL data:", payload.data?.length, "rows");
                     sqlDataRef.current = payload.data || [];
-                    tryBuildChart(); // Try to build if chart config already arrived
+                    tryBuildChart();
                 },
 
-                onThinking: (text) => {
+                onAgentStatus: (payload) => {
                     setChatMessages((prev) => {
                         const updated = [...prev];
-                        const last = updated[updated.length - 1];
-                        if (last.type !== "thinking") return prev;
-                        updated[updated.length - 1] = {
-                            ...last,
-                            text: last.text ? last.text + "\n" + text : text,
-                        };
+                        // Find the last status message
+                        const statusIdx = updated.findLastIndex((m) => m.type === "status");
+                        if (statusIdx === -1) return prev;
+                        const statusMsg = { ...updated[statusIdx] };
+                        const steps = [...(statusMsg.steps || [])];
+
+                        if (payload.status === "started") {
+                            steps.push({ agent: payload.agent, status: "started", message: payload.message });
+                        } else if (payload.status === "completed") {
+                            const stepData: AgentStep = {
+                                agent: payload.agent,
+                                status: "completed",
+                                message: payload.message,
+                                detail: payload.detail,
+                            };
+                            // Update the matching started step to completed
+                            const idx = steps.findLastIndex((s) => s.agent === payload.agent && s.status === "started");
+                            if (idx !== -1) {
+                                steps[idx] = stepData;
+                            } else {
+                                steps.push(stepData);
+                            }
+                        }
+
+                        statusMsg.steps = steps;
+                        updated[statusIdx] = statusMsg;
                         return updated;
                     });
+                },
+
+                onThinking: (_text) => {
+                    // Raw LLM tokens suppressed — agent_status handles progress display
                 },
 
 

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 import logging
 from typing import AsyncGenerator
@@ -13,6 +14,26 @@ from utils.helpers import LOG_CHUNK_PREVIEW, emit
 
 log = logging.getLogger("agent")
 router = APIRouter()
+
+# Agent display names and descriptions for frontend status updates
+AGENT_META = {
+    "project_manager_agent": {
+        "label": "Analysis Agent",
+        "start": "Analyzing your query and building execution plan...",
+    },
+    "researcher_agent": {
+        "label": "Research Agent",
+        "start": "Generating SQL and fetching data from BigQuery...",
+    },
+    "response_agent": {
+        "label": "Response Agent",
+        "start": "Generating your answer...",
+    },
+    "display_agent": {
+        "label": "Display Agent",
+        "start": "Building visualization config...",
+    },
+}
 
 SYSTEM_PROMPT = (
     "You are a helpful data analyst assistant. "
@@ -92,24 +113,36 @@ async def chat(req: ChatRequest):
         }
 
         node_chunks: dict[str, list[str]] = {}
+        started_nodes: set[str] = set()
+        completed_nodes: set[str] = set()
+
+        # Keys that identify the *real* node-level output (vs internal chain outputs)
+        NODE_OUTPUT_KEYS = {
+            "project_manager_agent": "pm_plan",
+            "researcher_agent": "SQLQuery",
+            "response_agent": "stream_chunks",
+            "display_agent": "display_results",
+        }
 
         try:
-            # ── astream_events replaces threading + queue entirely ────────────
-            # version="v2" is required for LangGraph node-level events.
-            # LangGraph emits "on_chat_model_stream" per token from every LLM
-            # call inside every node — no manual token_queue needed in state.
             async for event in agent_graph.astream_events(initial_state, version="v2"):
                 kind = event["event"]
 
-                # Real-time token stream from any LLM call in any node
-                if kind == "on_chat_model_stream":
-                    token = event["data"]["chunk"].content
-                    if token:
-                        chunk = json.dumps({"type": "thinking_content", "data": token}) + "\n"
-                        log.info(f"[STREAM] Token: {chunk[:LOG_CHUNK_PREVIEW].strip()}")
-                        yield chunk
+                # ── Agent START: emit status when a known node begins ─────────
+                if kind == "on_chain_start":
+                    node_name = event.get("metadata", {}).get("langgraph_node", "")
+                    if node_name in AGENT_META and node_name not in started_nodes:
+                        started_nodes.add(node_name)
+                        meta = AGENT_META[node_name]
+                        status_chunk = emit("agent_status", {
+                            "agent": meta["label"],
+                            "status": "started",
+                            "message": meta["start"],
+                        })
+                        log.info(f"[STREAM] Agent started: {meta['label']}")
+                        yield status_chunk
 
-                # Node finished — capture its state output
+                # ── Agent END: emit completion status with summary ────────────
                 elif kind == "on_chain_end":
                     node_name = event.get("metadata", {}).get("langgraph_node", "")
                     if not node_name:
@@ -119,14 +152,52 @@ async def chat(req: ChatRequest):
                     if not isinstance(node_state, dict):
                         continue
 
-                    # Collect non-thinking stream_chunks for ordered flush
+                    # Only process the real node-level completion (has expected output key)
+                    expected_key = NODE_OUTPUT_KEYS.get(node_name)
+                    if expected_key and expected_key not in node_state:
+                        continue  # internal chain end — skip
+                    if node_name in completed_nodes:
+                        continue  # already emitted for this node
+                    if node_name in AGENT_META:
+                        completed_nodes.add(node_name)
+
+                    # Build completion summary + detail payload per agent
+                    if node_name in AGENT_META:
+                        meta = AGENT_META[node_name]
+                        summary = _build_agent_summary(node_name, node_state)
+                        detail = _build_agent_detail(node_name, node_state)
+                        payload: dict = {
+                            "agent": meta["label"],
+                            "status": "completed",
+                            "message": summary,
+                        }
+                        if detail:
+                            payload["detail"] = detail
+                        status_chunk = emit("agent_status", payload)
+                        log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
+                        yield status_chunk
+
+                    # Collect non-thinking, non-sql_data stream_chunks for ordered flush
                     for chunk in node_state.get("stream_chunks", []):
                         try:
                             chunk_type = json.loads(chunk).get("type", "")
                         except Exception:
                             chunk_type = ""
-                        if chunk_type != "thinking_content":
+                        if chunk_type not in ("thinking_content", "sql_data"):
                             node_chunks.setdefault(node_name, []).append(chunk)
+
+                    # Emit sql_data immediately when researcher finishes
+                    if node_name == "researcher_agent":
+                        sql_query = node_state.get("SQLQuery", "")
+                        sql_data = node_state.get("SQLData", "")
+                        if sql_query or sql_data:
+                            try:
+                                data_rows = json.loads(sql_data) if sql_data else []
+                            except Exception:
+                                data_rows = []
+                            sql_chunk = emit("sql_data", {"query": sql_query, "data": data_rows})
+                            yield sql_chunk
+                            log.info(f"[STREAM] sql_data emitted: {len(data_rows)} rows")
 
                     # Emit display modules when display_agent finishes
                     if node_name == "display_agent":
@@ -139,9 +210,9 @@ async def chat(req: ChatRequest):
                             node_chunks.setdefault("display_agent_emit", []).append(display_chunk)
                             log.info(f"[STREAM] display_modules emitted with {len(flat)} item(s)")
 
-                # Tool calls — useful for debugging / future UI indicators
+                # Tool calls — debug logging
                 elif kind == "on_tool_start":
-                    log.info(f"[TOOL] Starting: {event.get('name')} | input: {event['data'].get('input')}")
+                    log.info(f"[TOOL] Starting: {event.get('name')}")
                 elif kind == "on_tool_end":
                     log.info(f"[TOOL] Finished: {event.get('name')}")
 
@@ -164,3 +235,67 @@ async def chat(req: ChatRequest):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain")
+
+
+def _build_agent_summary(node_name: str, node_state: dict) -> str:
+    """Extract a short human-readable summary from an agent's output state."""
+    if node_name == "project_manager_agent":
+        plan = node_state.get("pm_plan", "")
+        parts = []
+        for label in ("USE_CASE", "CHART_TYPE", "OUTPUT_FORMAT"):
+            m = re.search(rf"{label}\s*:\s*(.+)", plan)
+            if m:
+                parts.append(f"{label}: {m.group(1).strip()}")
+        return " | ".join(parts) if parts else "Execution plan ready"
+
+    if node_name == "researcher_agent":
+        sql_data = node_state.get("SQLData", "")
+        try:
+            rows = json.loads(sql_data) if sql_data else []
+            count = len(rows) if isinstance(rows, list) else 0
+        except Exception:
+            count = 0
+        fetched = node_state.get("data_fetched", False)
+        if fetched and count > 0:
+            return f"Retrieved {count} rows from BigQuery"
+        return "No data returned from BigQuery"
+
+    if node_name == "response_agent":
+        return "Response generated"
+
+    if node_name == "display_agent":
+        graph_type = node_state.get("GraphType", "")
+        return f"Chart configured: {graph_type}" if graph_type else "Visualization ready"
+
+    return "Done"
+
+
+def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
+    """Build optional rich detail payload for an agent's completion event."""
+    if node_name == "researcher_agent":
+        detail: dict = {}
+        sql_query = node_state.get("SQLQuery", "")
+        if sql_query:
+            detail["sql"] = sql_query
+        sql_data = node_state.get("SQLData", "")
+        if sql_data:
+            try:
+                rows = json.loads(sql_data)
+                if isinstance(rows, list) and len(rows) > 0:
+                    detail["preview"] = rows[:5]
+                    detail["columns"] = list(rows[0].keys())
+                    detail["total_rows"] = len(rows)
+            except Exception:
+                pass
+        return detail if detail else None
+
+    if node_name == "display_agent":
+        viz_json = node_state.get("VisualizationJSON", "")
+        if viz_json:
+            try:
+                return {"config": json.loads(viz_json)}
+            except Exception:
+                return {"config_raw": viz_json}
+        return None
+
+    return None

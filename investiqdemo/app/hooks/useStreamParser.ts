@@ -29,13 +29,33 @@ export interface DisplayChunk {
 	data: DisplayModule[];
 }
 
-export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk | SqlDataChunk;
+export interface AgentStatusDetail {
+	sql?: string;
+	preview?: Record<string, any>[];
+	columns?: string[];
+	total_rows?: number;
+	config?: Record<string, any>;
+	config_raw?: string;
+}
+
+export interface AgentStatusChunk {
+	type: "agent_status";
+	data: {
+		agent: string;
+		status: "started" | "completed";
+		message: string;
+		detail?: AgentStatusDetail;
+	};
+}
+
+export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk | SqlDataChunk | AgentStatusChunk;
 
 export interface StreamHandlers {
 	onThinking: (text: string) => void;
 	onResponse: (text: string) => void;
 	onDisplay: (modules: DisplayModule[]) => void;
 	onSqlData?: (payload: { query: string; data: Record<string, any>[] }) => void;
+	onAgentStatus?: (payload: { agent: string; status: "started" | "completed"; message: string; detail?: AgentStatusDetail }) => void;
 }
 
 /**
@@ -66,6 +86,9 @@ export async function parseStream(
 		} else if (parsed.type === "display_modules") {
 			console.log("[useStreamParser] Received display modules:", parsed.data);
 			handlers.onDisplay(parsed.data);
+		} else if (parsed.type === "agent_status") {
+			console.log("[useStreamParser] Agent status:", (parsed as AgentStatusChunk).data);
+			handlers.onAgentStatus?.((parsed as AgentStatusChunk).data);
 		}
 	};
 
