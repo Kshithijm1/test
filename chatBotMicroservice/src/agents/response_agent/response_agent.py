@@ -16,6 +16,8 @@ from utils.helpers import (
 from .prompt import RESPONSE_AGENT_BASE_PROMPT
 
 def response_agent(state: AgentState) -> AgentState:
+    # Small delay to let frontend render the 'started' event before we begin work
+    time.sleep(0.6)
     log.info("━━━ [NODE 4 / RESPONSE AGENT] Generating final answer")
     t0 = time.time()
 
