@@ -1,5 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest } from "next/server";
+import http from "http";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -15,41 +16,58 @@ export async function POST(req: NextRequest) {
 	}
 
 	const apiUrl = process.env.PYTHON_API_URL ?? "http://localhost:8000";
-	const pythonRes = await fetch(`${apiUrl}/chat`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ prompt }),
-	});
+	const url = new URL("/chat", apiUrl);
 
-	if (!pythonRes.ok) {
-		return new Response(
-			JSON.stringify({ error: `Upstream error: ${pythonRes.status}` }),
-			{ status: 502, headers: { "Content-Type": "application/json" } },
-		);
-	}
-
-	if (!pythonRes.body) {
-		return new Response(
-			JSON.stringify({ error: "No response body from upstream" }),
-			{ status: 502, headers: { "Content-Type": "application/json" } },
-		);
-	}
-
-	// Manually read each chunk and forward it immediately to prevent buffering.
-	// The previous TransformStream + pipeTo approach batched chunks together,
-	// causing the frontend to miss intermediate "thinking" states.
-	const upstream = pythonRes.body.getReader();
+	// Use Node.js native http module for true chunk-by-chunk streaming.
+	// fetch() buffers small chunks internally, which batches agent events
+	// and prevents the frontend from showing real-time "thinking" spinners.
 	const stream = new ReadableStream({
-		async pull(controller) {
-			const { done, value } = await upstream.read();
-			if (done) {
-				controller.close();
-				return;
-			}
-			controller.enqueue(value);
-		},
-		cancel() {
-			upstream.cancel();
+		start(controller) {
+			const postData = JSON.stringify({ prompt });
+			const options: http.RequestOptions = {
+				hostname: url.hostname,
+				port: url.port || 8000,
+				path: url.pathname,
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Content-Length": Buffer.byteLength(postData),
+				},
+			};
+
+			const proxyReq = http.request(options, (proxyRes) => {
+				if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
+					controller.enqueue(
+						new TextEncoder().encode(
+							JSON.stringify({ type: "error", data: `Upstream error: ${proxyRes.statusCode}` }) + "\n"
+						)
+					);
+					controller.close();
+					return;
+				}
+
+				// Each 'data' event fires per TCP chunk — no buffering
+				proxyRes.on("data", (chunk: Buffer) => {
+					controller.enqueue(new Uint8Array(chunk));
+				});
+
+				proxyRes.on("end", () => {
+					controller.close();
+				});
+
+				proxyRes.on("error", (err) => {
+					console.error("[proxy] upstream error:", err);
+					controller.error(err);
+				});
+			});
+
+			proxyReq.on("error", (err) => {
+				console.error("[proxy] request error:", err);
+				controller.error(err);
+			});
+
+			proxyReq.write(postData);
+			proxyReq.end();
 		},
 	});
 
