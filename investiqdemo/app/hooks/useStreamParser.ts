@@ -76,6 +76,9 @@ export async function parseStream(
 	const decoder = new TextDecoder();
 	let lineBuffer = "";
 
+	// Track which agents have had their "started" spinner displayed
+	const shownStarted = new Set<string>();
+
 	const dispatch = async (parsed: StreamChunk) => {
 		if (parsed.type === "thinking_content") {
 			handlers.onThinking(parsed.data);
@@ -90,12 +93,27 @@ export async function parseStream(
 		} else if (parsed.type === "agent_status") {
 			const agentData = (parsed as AgentStatusChunk).data;
 			console.log(`[${new Date().toISOString().split('T')[1]}] Agent status: ${agentData.agent} ${agentData.status}`);
-			handlers.onAgentStatus?.(agentData);
-			// Hold longer after "started" so the spinner is visible even if
-			// "completed" arrives in the same HTTP chunk (proxy batching).
+
 			if (agentData.status === "started") {
+				shownStarted.add(agentData.agent);
+				handlers.onAgentStatus?.(agentData);
+				// Hold so the spinner is visible
 				await new Promise((r) => setTimeout(r, 800));
-			} else {
+			} else if (agentData.status === "completed") {
+				// If we never showed "started" for this agent, show it first
+				if (!shownStarted.has(agentData.agent)) {
+					shownStarted.add(agentData.agent);
+					console.log(`[synth] Inserting missing 'started' for ${agentData.agent}`);
+					handlers.onAgentStatus?.({
+						agent: agentData.agent,
+						status: "started",
+						message: agentData.agent + " is working...",
+					});
+					// Let the user see the spinner before completing
+					await new Promise((r) => setTimeout(r, 800));
+				}
+				// Now show the completed state
+				handlers.onAgentStatus?.(agentData);
 				await new Promise((r) => setTimeout(r, 50));
 			}
 		}
