@@ -113,58 +113,33 @@ async def chat(req: ChatRequest):
         }
 
         node_chunks: dict[str, list[str]] = {}
-        completed_nodes: set[str] = set()
-
-        # Keys that identify the *real* node-level output (vs internal chain outputs)
-        NODE_OUTPUT_KEYS = {
-            "project_manager": "pm_plan",
-            "researcher_agent": "SQLQuery",
-            "response_agent": "stream_chunks",
-            "display_agent": "display_results",
-        }
-
+        
         # Ordered agent execution sequence (matches graph edges)
         AGENT_ORDER = ["project_manager", "researcher_agent", "response_agent", "display_agent"]
+        next_agent_idx = 0
 
-        def _emit_started(node_name: str) -> str:
-            """Build a 'started' status event for the given node."""
-            meta = AGENT_META[node_name]
-            log.info(f"[STREAM] Agent started: {meta['label']}")
-            return emit("agent_status", {
+        # ── Emit "started" for the FIRST agent before loop ────────────────
+        if next_agent_idx < len(AGENT_ORDER):
+            first_agent = AGENT_ORDER[next_agent_idx]
+            meta = AGENT_META[first_agent]
+            yield emit("agent_status", {
                 "agent": meta["label"],
                 "status": "started",
                 "message": meta["start"],
             })
-
-        # ── Immediately emit "started" for the first agent ────────────────
-        yield _emit_started(AGENT_ORDER[0])
-        await asyncio.sleep(0.3)
+            log.info(f"[STREAM] Agent started: {meta['label']}")
+            await asyncio.sleep(0.5)
+            next_agent_idx += 1
 
         try:
-            async for event in agent_graph.astream_events(initial_state, version="v2"):
-                kind = event["event"]
-
-                # ── Agent END: emit completion status with summary ────────────
-                if kind == "on_chain_end":
-                    node_name = event.get("metadata", {}).get("langgraph_node", "")
-                    if not node_name:
-                        continue
-
-                    node_state = event["data"].get("output", {})
-                    if not isinstance(node_state, dict):
-                        continue
-
-                    # Only process the real node-level completion (has expected output key)
-                    expected_key = NODE_OUTPUT_KEYS.get(node_name)
-                    if expected_key and expected_key not in node_state:
-                        continue  # internal chain end — skip
-                    if node_name in completed_nodes:
-                        continue  # already emitted for this node
+            # Use astream() to get state updates as nodes complete
+            async for chunk in agent_graph.astream(initial_state):
+                # chunk is a dict: {node_name: state_update}
+                for node_name, node_state in chunk.items():
                     if node_name not in AGENT_META:
                         continue
-                    completed_nodes.add(node_name)
-
-                    # Build and emit completion event
+                    
+                    # ── The node has finished - emit "completed" ──────────────
                     meta = AGENT_META[node_name]
                     summary = _build_agent_summary(node_name, node_state)
                     detail = _build_agent_detail(node_name, node_state)
@@ -175,29 +150,32 @@ async def chat(req: ChatRequest):
                     }
                     if detail:
                         payload["detail"] = detail
-                    status_chunk = emit("agent_status", payload)
+                    completed_chunk = emit("agent_status", payload)
                     log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
-                    yield status_chunk
-                    await asyncio.sleep(0.3)
-
-                    # ── Proactively emit "started" for the NEXT agent ─────────
-                    try:
-                        cur_idx = AGENT_ORDER.index(node_name)
-                        if cur_idx + 1 < len(AGENT_ORDER):
-                            next_node = AGENT_ORDER[cur_idx + 1]
-                            yield _emit_started(next_node)
-                            await asyncio.sleep(0.3)
-                    except ValueError:
-                        pass
+                    yield completed_chunk
+                    await asyncio.sleep(0.5)
+                    
+                    # ── Emit "started" for the NEXT agent ─────────────────────
+                    if next_agent_idx < len(AGENT_ORDER):
+                        next_agent = AGENT_ORDER[next_agent_idx]
+                        next_meta = AGENT_META[next_agent]
+                        yield emit("agent_status", {
+                            "agent": next_meta["label"],
+                            "status": "started",
+                            "message": next_meta["start"],
+                        })
+                        log.info(f"[STREAM] Agent started: {next_meta['label']}")
+                        await asyncio.sleep(0.5)
+                        next_agent_idx += 1
 
                     # Collect non-thinking, non-sql_data stream_chunks for ordered flush
-                    for chunk in node_state.get("stream_chunks", []):
+                    for chunk_item in node_state.get("stream_chunks", []):
                         try:
-                            chunk_type = json.loads(chunk).get("type", "")
+                            chunk_type = json.loads(chunk_item).get("type", "")
                         except Exception:
                             chunk_type = ""
                         if chunk_type not in ("thinking_content", "sql_data"):
-                            node_chunks.setdefault(node_name, []).append(chunk)
+                            node_chunks.setdefault(node_name, []).append(chunk_item)
 
                     # Emit sql_data immediately when researcher finishes
                     if node_name == "researcher_agent":
@@ -222,12 +200,6 @@ async def chat(req: ChatRequest):
                             display_chunk = emit("display_modules", flat)
                             node_chunks.setdefault("display_agent_emit", []).append(display_chunk)
                             log.info(f"[STREAM] display_modules emitted with {len(flat)} item(s)")
-
-                # Tool calls — debug logging
-                elif kind == "on_tool_start":
-                    log.info(f"[TOOL] Starting: {event.get('name')}")
-                elif kind == "on_tool_end":
-                    log.info(f"[TOOL] Finished: {event.get('name')}")
 
         except Exception as e:
             log.error(f"[GRAPH] Error during graph execution: {e}", exc_info=True)
