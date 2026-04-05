@@ -1,7 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest } from "next/server";
 
-export const runtime = "edge";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
