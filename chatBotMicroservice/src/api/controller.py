@@ -119,6 +119,10 @@ async def chat(req: ChatRequest):
         next_agent_idx = 0
 
         # ── Emit "started" for the FIRST agent before loop ────────────────
+        log.info("=" * 80)
+        log.info("[STREAM] NEW STREAMING LOGIC ACTIVE - Using astream() with proactive emission")
+        log.info("=" * 80)
+        
         if next_agent_idx < len(AGENT_ORDER):
             first_agent = AGENT_ORDER[next_agent_idx]
             meta = AGENT_META[first_agent]
@@ -127,8 +131,9 @@ async def chat(req: ChatRequest):
                 "status": "started",
                 "message": meta["start"],
             })
-            log.info(f"[STREAM] Agent started: {meta['label']}")
+            log.info(f"[STREAM] ✓ Emitted STARTED for {meta['label']} (before loop)")
             await asyncio.sleep(0.5)
+            log.info(f"[STREAM] ✓ Slept 500ms after {meta['label']} started")
             next_agent_idx += 1
 
         try:

@@ -88,10 +88,12 @@ export async function parseStream(
 			console.log("[useStreamParser] Received display modules:", parsed.data);
 			handlers.onDisplay(parsed.data);
 		} else if (parsed.type === "agent_status") {
-			console.log("[useStreamParser] Agent status:", (parsed as AgentStatusChunk).data);
+			const timestamp = new Date().toISOString().split('T')[1];
+			console.log(`[${timestamp}] Agent status:`, (parsed as AgentStatusChunk).data);
 			handlers.onAgentStatus?.((parsed as AgentStatusChunk).data);
 			// Yield to React so it renders the status update before the next event
 			await new Promise((r) => setTimeout(r, 100));
+			console.log(`[${new Date().toISOString().split('T')[1]}] Finished processing agent status`);
 		}
 	};
 
