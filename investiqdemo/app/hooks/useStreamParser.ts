@@ -91,7 +91,7 @@ export async function parseStream(
 			console.log("[useStreamParser] Agent status:", (parsed as AgentStatusChunk).data);
 			handlers.onAgentStatus?.((parsed as AgentStatusChunk).data);
 			// Yield to React so it renders the status update before the next event
-			await new Promise((r) => setTimeout(r, 30));
+			await new Promise((r) => setTimeout(r, 100));
 		}
 	};
 

@@ -138,7 +138,7 @@ async def chat(req: ChatRequest):
 
         # ── Immediately emit "started" for the first agent ────────────────
         yield _emit_started(AGENT_ORDER[0])
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.3)
 
         try:
             async for event in agent_graph.astream_events(initial_state, version="v2"):
@@ -178,7 +178,7 @@ async def chat(req: ChatRequest):
                     status_chunk = emit("agent_status", payload)
                     log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
                     yield status_chunk
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.3)
 
                     # ── Proactively emit "started" for the NEXT agent ─────────
                     try:
@@ -186,7 +186,7 @@ async def chat(req: ChatRequest):
                         if cur_idx + 1 < len(AGENT_ORDER):
                             next_node = AGENT_ORDER[cur_idx + 1]
                             yield _emit_started(next_node)
-                            await asyncio.sleep(0.05)
+                            await asyncio.sleep(0.3)
                     except ValueError:
                         pass
 
