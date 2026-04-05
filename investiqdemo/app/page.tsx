@@ -3,6 +3,7 @@ import { Box } from "@mui/material";
 import InputBox from "./components/InputBox";
 import GraphBox from "./components/GraphBox";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { flushSync } from "react-dom";
 import ChatBox from "./components/ChatBox";
 import {
     LineGraph,
@@ -262,50 +263,53 @@ export default function Home() {
                 },
 
                 onAgentStatus: (payload) => {
-                    setChatMessages((prev) => {
-                        // Remove the initial "thinking" placeholder on first agent event
-                        const updated = prev.filter((m) => m.type !== "thinking");
+                    // Use flushSync to force immediate render and prevent React 18 batching
+                    flushSync(() => {
+                        setChatMessages((prev) => {
+                            // Remove the initial "thinking" placeholder on first agent event
+                            const updated = prev.filter((m) => m.type !== "thinking");
 
-                        if (payload.status === "started") {
-                            // Push a new "thinking..." line
-                            updated.push({
-                                type: "agent_step",
-                                text: payload.message,
-                                agentName: payload.agent,
-                                agentStatus: "started",
-                            });
-                        } else if (payload.status === "completed") {
-                            // Find the matching "started" line and flip it to "completed"
-                            const idx = updated.findLastIndex(
-                                (m) => m.type === "agent_step" && m.agentName === payload.agent && m.agentStatus === "started"
-                            );
-                            if (idx !== -1) {
-                                updated[idx] = { ...updated[idx], agentStatus: "completed", text: payload.message };
+                            if (payload.status === "started") {
+                                // Push a new "thinking..." line
+                                updated.push({
+                                    type: "agent_step",
+                                    text: payload.message,
+                                    agentName: payload.agent,
+                                    agentStatus: "started",
+                                });
+                            } else if (payload.status === "completed") {
+                                // Find the matching "started" line and flip it to "completed"
+                                const idx = updated.findLastIndex(
+                                    (m) => m.type === "agent_step" && m.agentName === payload.agent && m.agentStatus === "started"
+                                );
+                                if (idx !== -1) {
+                                    updated[idx] = { ...updated[idx], agentStatus: "completed", text: payload.message };
+                                }
+
+                                // Push detail output messages
+                                const d = payload.detail;
+                                if (d) {
+                                    // PM plan summary
+                                    if (d.plan_summary) {
+                                        updated.push({ type: "agent_output", text: d.plan_summary });
+                                    }
+                                    // SQL query
+                                    if (d.sql) {
+                                        updated.push({ type: "agent_output", text: "", detail: { sql: d.sql } });
+                                    }
+                                    // Data preview table
+                                    if (d.preview && d.columns) {
+                                        updated.push({ type: "agent_output", text: "", detail: { preview: d.preview, columns: d.columns, total_rows: d.total_rows } });
+                                    }
+                                    // Chart config
+                                    if (d.config || d.config_raw) {
+                                        updated.push({ type: "agent_output", text: "", detail: { config: d.config, config_raw: d.config_raw } });
+                                    }
+                                }
                             }
 
-                            // Push detail output messages
-                            const d = payload.detail;
-                            if (d) {
-                                // PM plan summary
-                                if (d.plan_summary) {
-                                    updated.push({ type: "agent_output", text: d.plan_summary });
-                                }
-                                // SQL query
-                                if (d.sql) {
-                                    updated.push({ type: "agent_output", text: "", detail: { sql: d.sql } });
-                                }
-                                // Data preview table
-                                if (d.preview && d.columns) {
-                                    updated.push({ type: "agent_output", text: "", detail: { preview: d.preview, columns: d.columns, total_rows: d.total_rows } });
-                                }
-                                // Chart config
-                                if (d.config || d.config_raw) {
-                                    updated.push({ type: "agent_output", text: "", detail: { config: d.config, config_raw: d.config_raw } });
-                                }
-                            }
-                        }
-
-                        return updated;
+                            return updated;
+                        });
                     });
                 },
 
