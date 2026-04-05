@@ -17,6 +17,8 @@ def display_agent(state: AgentState) -> AgentState:
     Writes to state:
         GraphType, VisualizationJSON, display_results
     """
+    # Small delay to let frontend render the 'started' event before we begin work
+    time.sleep(0.6)
     log.info("━━━ [DISPLAY AGENT] Generating chart configuration")
     t0 = time.time()
 

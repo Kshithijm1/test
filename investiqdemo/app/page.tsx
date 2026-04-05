@@ -185,21 +185,13 @@ export default function Home() {
 
     // ── Backend health poll ───────────────────────────────────────────────────
     useEffect(() => {
-        const check = async () => {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-            
-            try {
-                const r = await fetch("/api/health", { signal: controller.signal });
-                clearTimeout(timeoutId);
-                const body = await r.json();
-                setBackendStatus(body.status === "online" ? "online" : "offline");
-                console.log("[Health Check] Backend status:", body.status);
-            } catch (err) {
-                clearTimeout(timeoutId);
-                setBackendStatus("offline");
-                console.warn("[Health Check] Backend offline or timeout:", err);
-            }
+        const check = () => {
+            fetch("/api/health")
+                .then((r) => r.json())
+                .then((body) =>
+                    setBackendStatus(body.status === "online" ? "online" : "offline"),
+                )
+                .catch(() => setBackendStatus("offline"));
         };
         check();
         const interval = setInterval(check, 30_000);
@@ -251,8 +243,7 @@ export default function Home() {
 
 
         try {
-            const pythonApiUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL ?? "http://localhost:8000";
-            const response = await fetch(`${pythonApiUrl}/chat`, {
+            const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ prompt }),

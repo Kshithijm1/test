@@ -22,6 +22,8 @@ def project_manager_agent(state: AgentState) -> AgentState:
             - OUTPUT_FORMAT: text | chart | both
             - CHART_TYPE: ScatterPlot | LineGraph | BarGraph | none
     """
+    # Small delay to let frontend render the 'started' event before we begin work
+    time.sleep(0.6)
     log.info("━━━ [ANALYSIS AGENT] Translating query into structured plan")
     t0 = time.time()
 
