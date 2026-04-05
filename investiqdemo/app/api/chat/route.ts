@@ -1,6 +1,7 @@
 // app/api/chat/route.ts
 import { NextRequest } from "next/server";
 
+export const runtime = "edge";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
@@ -35,16 +36,29 @@ export async function POST(req: NextRequest) {
 		);
 	}
 
-	// Pipe through a TransformStream so Next.js handles backpressure correctly
-	const { readable, writable } = new TransformStream();
-	pythonRes.body.pipeTo(writable);
+	// Manually read each chunk and forward it immediately to prevent buffering.
+	// The previous TransformStream + pipeTo approach batched chunks together,
+	// causing the frontend to miss intermediate "thinking" states.
+	const upstream = pythonRes.body.getReader();
+	const stream = new ReadableStream({
+		async pull(controller) {
+			const { done, value } = await upstream.read();
+			if (done) {
+				controller.close();
+				return;
+			}
+			controller.enqueue(value);
+		},
+		cancel() {
+			upstream.cancel();
+		},
+	});
 
-	return new Response(readable, {
+	return new Response(stream, {
 		headers: {
 			"Content-Type": "text/plain; charset=utf-8",
-			// Prevent Next.js / nginx from buffering the stream
 			"X-Accel-Buffering": "no",
-			"Cache-Control": "no-cache",
+			"Cache-Control": "no-cache, no-transform",
 		},
 	});
 }
