@@ -119,10 +119,6 @@ async def chat(req: ChatRequest):
         next_agent_idx = 0
 
         # ── Emit "started" for the FIRST agent before loop ────────────────
-        log.info("=" * 80)
-        log.info("[STREAM] NEW STREAMING LOGIC ACTIVE - Using astream() with proactive emission")
-        log.info("=" * 80)
-        
         if next_agent_idx < len(AGENT_ORDER):
             first_agent = AGENT_ORDER[next_agent_idx]
             meta = AGENT_META[first_agent]
@@ -131,9 +127,8 @@ async def chat(req: ChatRequest):
                 "status": "started",
                 "message": meta["start"],
             })
-            log.info(f"[STREAM] ✓ Emitted STARTED for {meta['label']} (before loop)")
-            await asyncio.sleep(0.5)
-            log.info(f"[STREAM] ✓ Slept 500ms after {meta['label']} started")
+            log.info(f"[STREAM] Agent started: {meta['label']}")
+            await asyncio.sleep(0.1)
             next_agent_idx += 1
 
         try:
@@ -158,7 +153,7 @@ async def chat(req: ChatRequest):
                     completed_chunk = emit("agent_status", payload)
                     log.info(f"[STREAM] Agent completed: {meta['label']} — {summary}")
                     yield completed_chunk
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.1)
                     
                     # ── Emit "started" for the NEXT agent ─────────────────────
                     if next_agent_idx < len(AGENT_ORDER):
@@ -170,7 +165,7 @@ async def chat(req: ChatRequest):
                             "message": next_meta["start"],
                         })
                         log.info(f"[STREAM] Agent started: {next_meta['label']}")
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.1)
                         next_agent_idx += 1
 
                     # Collect non-thinking, non-sql_data stream_chunks for ordered flush

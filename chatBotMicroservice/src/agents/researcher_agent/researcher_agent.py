@@ -19,8 +19,6 @@ def researcher_agent(state: AgentState) -> AgentState:
         df50      — top 50 rows as JSON string (for display agent)
         data_fetched — bool indicating if rows were returned
     """
-    # Small delay to let frontend render the 'started' event before we begin work
-    time.sleep(0.6)
     log.info("━━━ [RESEARCHER] BigQuery SQL generation and execution")
     t0 = time.time()
 

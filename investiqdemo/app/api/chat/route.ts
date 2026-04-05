@@ -35,16 +35,31 @@ export async function POST(req: NextRequest) {
 		);
 	}
 
-	// Pipe through a TransformStream so Next.js handles backpressure correctly
-	const { readable, writable } = new TransformStream();
-	pythonRes.body.pipeTo(writable);
+	// Manually read each chunk from the Python backend and immediately
+	// enqueue it to the browser stream — prevents buffering by the proxy.
+	const reader = pythonRes.body.getReader();
 
-	return new Response(readable, {
+	const stream = new ReadableStream({
+		async pull(controller) {
+			const { done, value } = await reader.read();
+			if (done) {
+				controller.close();
+				return;
+			}
+			controller.enqueue(value);
+		},
+		cancel() {
+			reader.cancel();
+		},
+	});
+
+	return new Response(stream, {
 		headers: {
-			"Content-Type": "text/plain; charset=utf-8",
-			// Prevent Next.js / nginx from buffering the stream
+			"Content-Type": "text/event-stream; charset=utf-8",
 			"X-Accel-Buffering": "no",
-			"Cache-Control": "no-cache",
+			"Cache-Control": "no-cache, no-transform",
+			"Connection": "keep-alive",
+			"Transfer-Encoding": "chunked",
 		},
 	});
 }

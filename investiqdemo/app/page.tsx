@@ -251,7 +251,8 @@ export default function Home() {
 
 
         try {
-            const response = await fetch("/api/chat", {
+            const pythonApiUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL ?? "http://localhost:8000";
+            const response = await fetch(`${pythonApiUrl}/chat`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ prompt }),
