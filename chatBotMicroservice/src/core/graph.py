@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from core.state import AgentState
 from agents.project_manager_agent.project_manager_agent import project_manager_agent
 from agents.researcher_agent.researcher_agent import researcher_agent
@@ -12,7 +13,7 @@ def after_validator(state: AgentState) -> str:
     return END
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     builder = StateGraph(AgentState)
 
     builder.add_node("project_manager", project_manager_agent)
@@ -27,7 +28,12 @@ def build_graph():
     builder.add_edge("response_agent", "display_agent")
     builder.add_edge("display_agent", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
+# Auto mode graph (no checkpointer - existing behaviour, unchanged)
 agent_graph = build_graph()
+
+# Manual (HITL) mode graph - uses MemorySaver so interrupt/resume works
+_memory = MemorySaver()
+manual_graph = build_graph(checkpointer=_memory)

@@ -1,16 +1,23 @@
 import asyncio
 import json
+import os
 import re
 import time
+import uuid
 import logging
+from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from langchain_core.messages import SystemMessage, HumanMessage
-from core.graph import agent_graph
+from langgraph.types import Command
+from core.graph import agent_graph, manual_graph
 from core.state import AgentState
 from utils.helpers import LOG_CHUNK_PREVIEW, emit
+
+TRAINING_LOG_PATH = Path(__file__).parent.parent / "data" / "training_log.jsonl"
+TRAINING_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 log = logging.getLogger("agent")
 router = APIRouter()
@@ -65,6 +72,7 @@ MAX_PROMPT_LENGTH = 2000
 
 class ChatRequest(BaseModel):
     prompt: str
+    mode: str = "auto"  # "auto" or "manual" (HITL)
 
     # ── Validation moved into the model — FastAPI returns 422 automatically ──
     @field_validator("prompt")
@@ -78,6 +86,19 @@ class ChatRequest(BaseModel):
         return v
 
 
+class ResumeRequest(BaseModel):
+    thread_id: str
+    approved_sql: str
+    was_edited: bool = False
+
+
+class TrainingLogRequest(BaseModel):
+    query: str
+    original_sql: str
+    corrected_sql: str
+    pm_plan: str = ""
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -85,6 +106,11 @@ def health():
 
 @router.post("/chat")
 async def chat(req: ChatRequest):
+    is_manual = req.mode == "manual"
+    graph = manual_graph if is_manual else agent_graph
+    thread_id = str(uuid.uuid4()) if is_manual else None
+    config = {"configurable": {"thread_id": thread_id}} if thread_id else {}
+
     async def generate() -> AsyncGenerator[str, None]:
         initial_state: AgentState = {
             "messages": [
@@ -110,6 +136,7 @@ async def chat(req: ChatRequest):
             "evaluation_critique": "",
             "retry_count": 0,
             "start_time": time.time(),
+            "mode": req.mode,
         }
 
         node_chunks: dict[str, list[str]] = {}
@@ -138,7 +165,15 @@ async def chat(req: ChatRequest):
 
         try:
             # Use astream() to get state updates as nodes complete
-            async for chunk in agent_graph.astream(initial_state):
+            async for chunk in graph.astream(initial_state, config=config):
+                # ── HITL interrupt detected ────────────────────────────────
+                if "__interrupt__" in chunk:
+                    for intr in chunk["__interrupt__"]:
+                        sql = getattr(intr, "value", {}).get("sql", "")
+                        if sql and thread_id:
+                            log.info(f"[STREAM] HITL interrupt: emitting hitl event, thread_id={thread_id}")
+                            yield emit("hitl", {"thread_id": thread_id, "sql": sql})
+                    return  # stream ends here; frontend calls /chat/resume to continue
                 # chunk is a dict: {node_name: state_update}
                 for node_name, node_state in chunk.items():
                     if node_name not in AGENT_META:
@@ -295,3 +330,115 @@ def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
         return None
 
     return None
+
+
+@router.post("/chat/resume")
+async def chat_resume(req: ResumeRequest):
+    """Resume a HITL-paused graph after human SQL review."""
+    config = {"configurable": {"thread_id": req.thread_id}}
+
+    async def generate() -> AsyncGenerator[str, None]:
+        # Researcher was already shown as "started" before the interrupt.
+        # After resume: researcher finishes → response_agent → display_agent.
+        # next_agent_idx = 2 means response_agent is the next "started" to emit.
+        AGENT_ORDER = ["project_manager", "researcher_agent", "response_agent", "display_agent"]
+        next_agent_idx = 2
+        node_chunks: dict[str, list[str]] = {}
+
+        try:
+            async for chunk in manual_graph.astream(
+                Command(resume={"approved_sql": req.approved_sql, "was_edited": req.was_edited}),
+                config=config,
+            ):
+                if "__interrupt__" in chunk:
+                    continue  # should not happen after first resume
+
+                for node_name, node_state in chunk.items():
+                    if node_name not in AGENT_META:
+                        continue
+
+                    meta = AGENT_META[node_name]
+                    summary = _build_agent_summary(node_name, node_state)
+                    detail = _build_agent_detail(node_name, node_state)
+                    payload: dict = {
+                        "agent": meta["label"],
+                        "status": "completed",
+                        "message": summary,
+                    }
+                    if detail:
+                        payload["detail"] = detail
+                    yield emit("agent_status", payload)
+                    log.info(f"[RESUME] Agent completed: {meta['label']} — {summary}")
+                    await asyncio.sleep(0.5)
+
+                    if next_agent_idx < len(AGENT_ORDER):
+                        next_meta = AGENT_META[AGENT_ORDER[next_agent_idx]]
+                        yield emit("agent_status", {
+                            "agent": next_meta["label"],
+                            "status": "started",
+                            "message": next_meta["start"],
+                        })
+                        await asyncio.sleep(0.5)
+                        next_agent_idx += 1
+
+                    for chunk_item in node_state.get("stream_chunks", []):
+                        try:
+                            chunk_type = json.loads(chunk_item).get("type", "")
+                        except Exception:
+                            chunk_type = ""
+                        if chunk_type not in ("thinking_content", "sql_data"):
+                            node_chunks.setdefault(node_name, []).append(chunk_item)
+
+                    if node_name == "researcher_agent":
+                        sql_query = node_state.get("SQLQuery", "")
+                        sql_data = node_state.get("SQLData", "")
+                        if sql_query or sql_data:
+                            try:
+                                data_rows = json.loads(sql_data) if sql_data else []
+                            except Exception:
+                                data_rows = []
+                            yield emit("sql_data", {"query": sql_query, "data": data_rows})
+                            log.info(f"[RESUME] sql_data emitted: {len(data_rows)} rows")
+
+                    if node_name == "display_agent":
+                        display_results = node_state.get("display_results", [])
+                        if display_results:
+                            flat: list = []
+                            for r in display_results:
+                                flat.extend(r) if isinstance(r, list) else flat.append(r)
+                            node_chunks.setdefault("display_agent_emit", []).append(
+                                emit("display_modules", flat)
+                            )
+
+        except Exception as e:
+            log.error(f"[RESUME] Error during graph resume: {e}", exc_info=True)
+            yield json.dumps({"type": "response_content", "data": "Something went wrong on resume."}) + "\n"
+            return
+
+        TYPE_ORDER = {"response_content": 0, "display_modules": 1}
+        all_final = [c for chunks in node_chunks.values() for c in chunks]
+        all_final.sort(key=lambda c: TYPE_ORDER.get(json.loads(c).get("type", "") if c.strip() else "", 99))
+        for chunk in all_final:
+            yield chunk
+
+    return StreamingResponse(generate(), media_type="text/plain")
+
+
+@router.post("/training/log")
+async def training_log(req: TrainingLogRequest):
+    """Persist a human SQL correction for future training."""
+    record = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "query": req.query,
+        "pm_plan": req.pm_plan,
+        "original_sql": req.original_sql,
+        "corrected_sql": req.corrected_sql,
+    }
+    try:
+        with open(TRAINING_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+        log.info(f"[TRAINING] Logged SQL correction for query: {req.query[:80]}")
+    except Exception as e:
+        log.error(f"[TRAINING] Failed to write training log: {e}")
+        raise HTTPException(status_code=500, detail="Failed to write training log")
+    return {"status": "ok", "logged": True}

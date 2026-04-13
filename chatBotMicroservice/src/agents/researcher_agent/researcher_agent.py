@@ -1,6 +1,7 @@
 import json
 import time
 from langchain_core.messages import HumanMessage
+from langgraph.types import interrupt
 from core.state import AgentState
 from utils.tools import TOOL_MAP
 from utils.helpers import log
@@ -79,6 +80,14 @@ def researcher_agent(state: AgentState) -> AgentState:
         clean_sql = (cte_match or select_match).group(1).strip() if (cte_match or select_match) else sql_result.strip()
 
         log.info(f"[RESEARCHER] SQL Query to Execute:\n{clean_sql}")
+
+        # ── HITL checkpoint: pause before BigQuery execution in manual mode ───
+        if state.get("mode") == "manual":
+            log.info("[RESEARCHER] HITL mode: pausing for human SQL review...")
+            human_decision = interrupt({"sql": clean_sql})
+            clean_sql = human_decision.get("approved_sql", clean_sql)
+            log.info(f"[RESEARCHER] Resumed with approved SQL (edited={human_decision.get('was_edited', False)})")
+
         log.info("[RESEARCHER] Step 2: Executing BigQuery...")
         execution_result = execute_bigquery_tool.invoke({"sql_query": clean_sql, "limit": 100})
         log.debug(f"[RESEARCHER] Execution result: {execution_result[:300]}...")

@@ -28,3 +28,4 @@ class AgentState(TypedDict):
     retry_count:         int
     token_queue:         Any
     start_time:          float
+    mode:                str

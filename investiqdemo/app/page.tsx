@@ -127,11 +127,14 @@ function buildLayout(config: any): any {
 
 
 export interface ChatMessage {
-    type: "user" | "bot" | "thinking" | "agent_step" | "agent_output";
+    type: "user" | "bot" | "thinking" | "agent_step" | "agent_output" | "hitl_checkpoint";
     text: string;
     agentName?: string;
     agentStatus?: "started" | "completed";
     detail?: AgentStatusDetail;
+    sql?: string;
+    threadId?: string;
+    hitlStatus?: "pending" | "approved";
 }
 
 
@@ -145,9 +148,17 @@ export default function Home() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [mode, setMode] = useState<"auto" | "manual">(() => {
+        if (typeof window !== "undefined") {
+            return (localStorage.getItem("chatMode") as "auto" | "manual") ?? "auto";
+        }
+        return "auto";
+    });
     const sqlDataRef = useRef<Record<string, any>[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
     const chartConfigRef = useRef<any>(null);
+    const hitlThreadIdRef = useRef<string | null>(null);
+    const currentQueryRef = useRef<string>("");
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
 
     // Build chart only when BOTH sql_data and chart config are available
@@ -243,10 +254,12 @@ export default function Home() {
 
 
         try {
+            currentQueryRef.current = prompt;
+
             const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt }),
+                body: JSON.stringify({ prompt, mode }),
                 signal: controller.signal,
             });
 
@@ -261,6 +274,23 @@ export default function Home() {
                     sqlDataRef.current = payload.data || [];
                     tryBuildChart();
                 },
+
+                onHitl: (payload) => {
+                    hitlThreadIdRef.current = payload.thread_id;
+                    flushSync(() => {
+                        setChatMessages((prev) => [
+                            ...prev.filter((m) => m.type !== "thinking"),
+                            {
+                                type: "hitl_checkpoint",
+                                text: "",
+                                sql: payload.sql,
+                                threadId: payload.thread_id,
+                                hitlStatus: "pending",
+                            },
+                        ]);
+                    });
+                },
+
 
                 onAgentStatus: (payload) => {
                     // Use flushSync to force immediate render and prevent React 18 batching
@@ -373,6 +403,112 @@ export default function Home() {
     }, []);
 
 
+    const handleHitlContinue = useCallback(async (
+        originalSql: string,
+        approvedSql: string,
+        wasEdited: boolean,
+    ) => {
+        const threadId = hitlThreadIdRef.current;
+        if (!threadId) return;
+
+        if (wasEdited) {
+            fetch("/api/training-log", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    query: currentQueryRef.current,
+                    original_sql: originalSql,
+                    corrected_sql: approvedSql,
+                }),
+            }).catch(console.error);
+        }
+
+        flushSync(() => {
+            setChatMessages((prev) => prev.map((m) =>
+                m.type === "hitl_checkpoint" && m.threadId === threadId
+                    ? { ...m, hitlStatus: "approved" }
+                    : m
+            ));
+        });
+
+        setIsLoading(true);
+        let resumeBotSeeded = false;
+        setChatMessages((prev) => [...prev, { text: "", type: "thinking" }]);
+
+        try {
+            const resumeRes = await fetch("/api/chat/resume", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    thread_id: threadId,
+                    approved_sql: approvedSql,
+                    was_edited: wasEdited,
+                }),
+            });
+
+            if (!resumeRes.ok) throw new Error(`Resume HTTP error: ${resumeRes.status}`);
+
+            await parseStream(resumeRes, {
+                onSqlData: (payload) => {
+                    sqlDataRef.current = payload.data || [];
+                    tryBuildChart();
+                },
+                onAgentStatus: (payload) => {
+                    flushSync(() => {
+                        setChatMessages((prev) => {
+                            const updated = prev.filter((m) => m.type !== "thinking");
+                            if (payload.status === "started") {
+                                updated.push({ type: "agent_step", text: payload.message, agentName: payload.agent, agentStatus: "started" });
+                            } else if (payload.status === "completed") {
+                                const idx = updated.findLastIndex(
+                                    (m) => m.type === "agent_step" && m.agentName === payload.agent && m.agentStatus === "started"
+                                );
+                                if (idx !== -1) updated[idx] = { ...updated[idx], agentStatus: "completed", text: payload.message };
+                                const d = payload.detail;
+                                if (d) {
+                                    if (d.plan_summary) updated.push({ type: "agent_output", text: d.plan_summary });
+                                    if (d.sql) updated.push({ type: "agent_output", text: "", detail: { sql: d.sql } });
+                                    if (d.preview && d.columns) updated.push({ type: "agent_output", text: "", detail: { preview: d.preview, columns: d.columns, total_rows: d.total_rows } });
+                                    if (d.config || d.config_raw) updated.push({ type: "agent_output", text: "", detail: { config: d.config, config_raw: d.config_raw } });
+                                }
+                            }
+                            return updated;
+                        });
+                    });
+                },
+                onThinking: (_text) => {},
+                onResponse: (text) => {
+                    if (!resumeBotSeeded) {
+                        setChatMessages((prev) => [...prev, { text: "", type: "bot" }]);
+                        resumeBotSeeded = true;
+                    }
+                    setChatMessages((prev) => {
+                        const updated = [...prev];
+                        const last = updated[updated.length - 1];
+                        if (last?.type !== "bot") return prev;
+                        updated[updated.length - 1] = { ...last, text: last.text + text };
+                        return updated;
+                    });
+                },
+                onDisplay: (modules) => { modules.forEach(toolHandlers); },
+                onHitl: () => {},
+            });
+        } catch (error) {
+            const isAbort = error instanceof DOMException && error.name === "AbortError";
+            const message = isAbort ? "Request timed out." : "Something went wrong. Please try again.";
+            if (!isAbort) console.error("Chat resume error:", error);
+            setChatMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { text: message, type: "bot" };
+                return updated;
+            });
+        } finally {
+            setIsLoading(false);
+            hitlThreadIdRef.current = null;
+        }
+    }, [tryBuildChart, toolHandlers]);
+
+
     // ── Status indicator config ───────────────────────────────────────────────
     const statusColor: Record<BackendStatus, string> = {
         checking: "#facc15",
@@ -464,7 +600,47 @@ export default function Home() {
                 </Box>
 
 
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    {/* Mode toggle */}
+                    <Box
+                        sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            bgcolor: "#f0f4fb",
+                            border: "1px solid #e3eaf5",
+                            borderRadius: "20px",
+                            p: "2px",
+                            gap: "2px",
+                            cursor: "pointer",
+                        }}
+                    >
+                        {(["auto", "manual"] as const).map((m) => (
+                            <Box
+                                key={m}
+                                onClick={() => {
+                                    setMode(m);
+                                    localStorage.setItem("chatMode", m);
+                                }}
+                                sx={{
+                                    px: 1.25,
+                                    py: 0.4,
+                                    borderRadius: "16px",
+                                    fontSize: "0.65rem",
+                                    fontWeight: 600,
+                                    letterSpacing: "0.06em",
+                                    textTransform: "uppercase",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s",
+                                    bgcolor: mode === m ? "#1976d2" : "transparent",
+                                    color: mode === m ? "white" : "#90a4c0",
+                                    userSelect: "none",
+                                }}
+                            >
+                                {m === "auto" ? "Auto" : "Manual"}
+                            </Box>
+                        ))}
+                    </Box>
+
                     <Box
                         sx={{
                             width: 8,
@@ -538,7 +714,7 @@ export default function Home() {
 
 
                     <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-                        <ChatBox chatMessages={chatMessages} />
+                        <ChatBox chatMessages={chatMessages} onHitlContinue={handleHitlContinue} />
                     </Box>
 
 

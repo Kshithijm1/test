@@ -49,7 +49,15 @@ export interface AgentStatusChunk {
 	};
 }
 
-export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk | SqlDataChunk | AgentStatusChunk;
+export interface HitlChunk {
+	type: "hitl";
+	data: {
+		thread_id: string;
+		sql: string;
+	};
+}
+
+export type StreamChunk = ThinkingChunk | ResponseChunk | DisplayChunk | SqlDataChunk | AgentStatusChunk | HitlChunk;
 
 export interface StreamHandlers {
 	onThinking: (text: string) => void;
@@ -57,6 +65,7 @@ export interface StreamHandlers {
 	onDisplay: (modules: DisplayModule[]) => void;
 	onSqlData?: (payload: { query: string; data: Record<string, any>[] }) => void;
 	onAgentStatus?: (payload: { agent: string; status: "started" | "completed"; message: string; detail?: AgentStatusDetail }) => void;
+	onHitl?: (payload: { thread_id: string; sql: string }) => void;
 }
 
 /**
@@ -90,6 +99,10 @@ export async function parseStream(
 		} else if (parsed.type === "display_modules") {
 			console.log("[useStreamParser] Received display modules:", parsed.data);
 			handlers.onDisplay(parsed.data);
+		} else if (parsed.type === "hitl") {
+			const hitlData = (parsed as HitlChunk).data;
+			console.log(`[useStreamParser] HITL interrupt: thread_id=${hitlData.thread_id}`);
+			handlers.onHitl?.(hitlData);
 		} else if (parsed.type === "agent_status") {
 			const agentData = (parsed as AgentStatusChunk).data;
 			console.log(`[${new Date().toISOString().split('T')[1]}] Agent status: ${agentData.agent} ${agentData.status}`);

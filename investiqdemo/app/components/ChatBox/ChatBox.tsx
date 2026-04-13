@@ -2,15 +2,169 @@
 import { Box, Typography } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import { ChatMessage } from "../../page";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 
 interface ChatBoxProps {
     chatMessages: ChatMessage[];
+    onHitlContinue?: (originalSql: string, approvedSql: string, wasEdited: boolean) => void;
 }
 
 
-export default function ChatBox({ chatMessages }: ChatBoxProps) {
+function HitlCheckpointCard({
+    sql,
+    status,
+    onContinue,
+}: {
+    sql: string;
+    status: "pending" | "approved";
+    onContinue: (originalSql: string, approvedSql: string, wasEdited: boolean) => void;
+}) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedSql, setEditedSql] = useState(sql);
+
+    if (status === "approved") {
+        return (
+            <Box sx={{
+                border: "1px solid #22c55e",
+                borderRadius: "8px",
+                p: 1.5,
+                bgcolor: "#f0fdf4",
+                fontSize: "0.7rem",
+                color: "#15803d",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+            }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="7" fill="#22c55e" />
+                    <path d="M4 7l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                SQL Approved — fetching data...
+            </Box>
+        );
+    }
+
+    return (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1, width: "100%" }}>
+            <Box sx={{
+                fontSize: "0.62rem", fontWeight: 700, color: "#1976d2",
+                textTransform: "uppercase", letterSpacing: "0.08em",
+                display: "flex", alignItems: "center", gap: 0.75,
+            }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <circle cx="6" cy="6" r="5.5" stroke="#1976d2" />
+                    <path d="M6 4v3M6 8.5v.5" stroke="#1976d2" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                Review SQL before execution
+            </Box>
+
+            {isEditing ? (
+                <textarea
+                    value={editedSql}
+                    onChange={(e) => setEditedSql(e.target.value)}
+                    style={{
+                        width: "100%",
+                        minHeight: 120,
+                        background: "#1a1a2e",
+                        color: "#a5d6ff",
+                        fontFamily: "'Fira Code', 'Consolas', monospace",
+                        fontSize: "0.65rem",
+                        lineHeight: 1.6,
+                        border: "1px solid #1976d2",
+                        borderRadius: "6px",
+                        padding: "10px 12px",
+                        resize: "vertical",
+                        outline: "none",
+                        boxSizing: "border-box",
+                    }}
+                />
+            ) : (
+                <Box sx={{
+                    bgcolor: "#1a1a2e", color: "#a5d6ff", p: 1.25,
+                    borderRadius: "6px", fontSize: "0.65rem",
+                    fontFamily: "'Fira Code', 'Consolas', monospace",
+                    lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    maxHeight: 180, overflowY: "auto",
+                    "&::-webkit-scrollbar": { width: "4px", height: "4px" },
+                    "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
+                }}>
+                    <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                        SQL Query
+                    </Box>
+                    {sql}
+                </Box>
+            )}
+
+            {isEditing && (
+                <Box sx={{
+                    fontSize: "0.6rem", color: "#f59e0b",
+                    display: "flex", alignItems: "center", gap: 0.5,
+                }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M5 1L1 9h8L5 1z" stroke="#f59e0b" strokeWidth="1" fill="none" strokeLinejoin="round" />
+                        <path d="M5 4v2M5 7.5v.5" stroke="#f59e0b" strokeWidth="1" strokeLinecap="round" />
+                    </svg>
+                    Editing SQL will be logged for training data
+                </Box>
+            )}
+
+            <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.75, mt: 0.5 }}>
+                {isEditing ? (
+                    <Box
+                        onClick={() => { setEditedSql(sql); setIsEditing(false); }}
+                        sx={{
+                            px: 1.5, py: 0.6, borderRadius: "20px",
+                            fontSize: "0.65rem", fontWeight: 600,
+                            border: "1px solid #e3eaf5", color: "#90a4c0",
+                            cursor: "pointer", userSelect: "none",
+                            "&:hover": { bgcolor: "#f0f4fb" },
+                        }}
+                    >
+                        Cancel
+                    </Box>
+                ) : (
+                    <Box
+                        onClick={() => setIsEditing(true)}
+                        sx={{
+                            width: 28, height: 28, borderRadius: "50%",
+                            border: "1.5px solid #e3eaf5", bgcolor: "white",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", userSelect: "none",
+                            "&:hover": { border: "1.5px solid #1976d2", color: "#1976d2" },
+                            transition: "all 0.15s",
+                        }}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none" />
+                        </svg>
+                    </Box>
+                )}
+
+                <Box
+                    onClick={() => onContinue(sql, isEditing ? editedSql : sql, isEditing && editedSql !== sql)}
+                    sx={{
+                        width: 28, height: 28, borderRadius: "50%",
+                        bgcolor: "#1976d2",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: "pointer", userSelect: "none",
+                        "&:hover": { bgcolor: "#1565c0" },
+                        transition: "background-color 0.15s",
+                        boxShadow: "0 2px 6px rgba(25,118,210,0.3)",
+                    }}
+                >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </Box>
+            </Box>
+        </Box>
+    );
+}
+
+
+export default function ChatBox({ chatMessages, onHitlContinue }: ChatBoxProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
 
@@ -347,6 +501,17 @@ export default function ChatBox({ chatMessages }: ChatBoxProps) {
                                 </Box>
                             );
                         })()}
+
+                        {/* ── hitl_checkpoint: SQL review with edit/continue buttons ── */}
+                        {msg.type === "hitl_checkpoint" && msg.sql && (
+                            <HitlCheckpointCard
+                                sql={msg.sql}
+                                status={msg.hitlStatus ?? "pending"}
+                                onContinue={(orig, approved, edited) =>
+                                    onHitlContinue?.(orig, approved, edited)
+                                }
+                            />
+                        )}
 
                         {/* ── bot: markdown response ── */}
                         {msg.type === "bot" && (
