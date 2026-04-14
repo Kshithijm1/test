@@ -148,18 +148,21 @@ export default function Home() {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [displayBox, setDisplayBox] = useState<ChartData[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [mode, setMode] = useState<"auto" | "manual">(() => {
-        if (typeof window !== "undefined") {
-            return (localStorage.getItem("chatMode") as "auto" | "manual") ?? "auto";
-        }
-        return "auto";
-    });
+    const [mode, setMode] = useState<"auto" | "manual">("auto");
     const sqlDataRef = useRef<Record<string, any>[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
     const chartConfigRef = useRef<any>(null);
     const hitlThreadIdRef = useRef<string | null>(null);
     const currentQueryRef = useRef<string>("");
     const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
+
+    // Load mode from localStorage after mount to avoid hydration mismatch
+    useEffect(() => {
+        const savedMode = localStorage.getItem("chatMode") as "auto" | "manual" | null;
+        if (savedMode) {
+            setMode(savedMode);
+        }
+    }, []);
 
     // Build chart only when BOTH sql_data and chart config are available
     const tryBuildChart = useCallback(() => {
