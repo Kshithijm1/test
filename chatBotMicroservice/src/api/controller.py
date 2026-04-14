@@ -163,21 +163,18 @@ async def chat(req: ChatRequest):
             log.info(f"[STREAM] ✓ Slept 500ms after {meta['label']} started")
             next_agent_idx += 1
 
+        interrupted = False
         try:
             # Use astream() to get state updates as nodes complete
             async for chunk in graph.astream(initial_state, config=config):
-                # ── HITL interrupt detected ────────────────────────────────
-                if "__interrupt__" in chunk:
-                    for intr in chunk["__interrupt__"]:
-                        sql = getattr(intr, "value", {}).get("sql", "")
-                        if sql and thread_id:
-                            log.info(f"[STREAM] HITL interrupt: emitting hitl event, thread_id={thread_id}")
-                            yield emit("hitl", {"thread_id": thread_id, "sql": sql})
-                    return  # stream ends here; frontend calls /chat/resume to continue
+                log.info(f"[STREAM] Chunk keys: {list(chunk.keys())}")
+                
                 # chunk is a dict: {node_name: state_update}
                 for node_name, node_state in chunk.items():
                     if node_name not in AGENT_META:
                         continue
+                    
+                    node_state = chunk[node_name]
                     
                     # ── The node has finished - emit "completed" ──────────────
                     meta = AGENT_META[node_name]
@@ -250,6 +247,33 @@ async def chat(req: ChatRequest):
                 }
             ) + "\n"
             return
+
+        # ── Check if graph was interrupted (HITL checkpoint) ──────────────────
+        if is_manual and thread_id:
+            state_snapshot = graph.get_state(config)
+            log.info(f"[STREAM] Checking for interrupts...")
+            log.info(f"[STREAM] State next: {state_snapshot.next}")
+            
+            # Check if there are pending tasks (indicates interrupt)
+            if state_snapshot.next and len(state_snapshot.next) > 0:
+                # Graph stopped mid-execution - check for interrupt
+                if hasattr(state_snapshot, 'tasks') and state_snapshot.tasks:
+                    log.info(f"[STREAM] Found {len(state_snapshot.tasks)} pending tasks")
+                    for task in state_snapshot.tasks:
+                        log.info(f"[STREAM] Task: {task}")
+                        if hasattr(task, 'interrupts') and task.interrupts:
+                            log.info(f"[STREAM] Task has {len(task.interrupts)} interrupts")
+                            for intr in task.interrupts:
+                                log.info(f"[STREAM] Interrupt value: {intr.value if hasattr(intr, 'value') else intr}")
+                                sql = intr.value.get("sql", "") if hasattr(intr, 'value') else ""
+                                if sql:
+                                    log.info(f"[STREAM] ✓ HITL interrupt detected, emitting event")
+                                    yield emit("hitl", {"thread_id": thread_id, "sql": sql})
+                                    return  # stream ends here
+                else:
+                    log.info(f"[STREAM] No tasks attribute on state snapshot")
+            else:
+                log.info(f"[STREAM] No pending next nodes - graph completed normally")
 
         # ── Flush final chunks in type order ─────────────────────────────────
         TYPE_ORDER = {"response_content": 0, "display_modules": 1}
