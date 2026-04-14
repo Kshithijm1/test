@@ -7,21 +7,29 @@ import { useEffect, useRef, useState } from "react";
 
 interface ChatBoxProps {
     chatMessages: ChatMessage[];
-    onHitlContinue?: (originalSql: string, approvedSql: string, wasEdited: boolean) => void;
+    onHitlContinue?: (checkpointType: "plan" | "sql", originalValue: string, approvedValue: string, wasEdited: boolean) => void;
 }
 
 
 function HitlCheckpointCard({
-    sql,
+    checkpointType,
+    value,
     status,
     onContinue,
 }: {
-    sql: string;
+    checkpointType: "plan" | "sql";
+    value: string;
     status: "pending" | "approved";
-    onContinue: (originalSql: string, approvedSql: string, wasEdited: boolean) => void;
+    onContinue: (checkpointType: "plan" | "sql", originalValue: string, approvedValue: string, wasEdited: boolean) => void;
 }) {
     const [isEditing, setIsEditing] = useState(false);
-    const [editedSql, setEditedSql] = useState(sql);
+    const [editedValue, setEditedValue] = useState(value);
+
+    const isPlan = checkpointType === "plan";
+    const label = isPlan ? "Analysis Plan" : "SQL Query";
+    const reviewLabel = isPlan ? "Review analysis plan before proceeding" : "Review SQL before execution";
+    const approvedLabel = isPlan ? "Plan Approved — generating SQL..." : "SQL Approved — fetching data...";
+    const warningLabel = isPlan ? "Editing plan will affect downstream SQL generation" : "Editing SQL will be logged for training data";
 
     if (status === "approved") {
         return (
@@ -41,7 +49,7 @@ function HitlCheckpointCard({
                     <circle cx="7" cy="7" r="7" fill="#22c55e" />
                     <path d="M4 7l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                SQL Approved — fetching data...
+                {approvedLabel}
             </Box>
         );
     }
@@ -57,19 +65,19 @@ function HitlCheckpointCard({
                     <circle cx="6" cy="6" r="5.5" stroke="#1976d2" />
                     <path d="M6 4v3M6 8.5v.5" stroke="#1976d2" strokeWidth="1.2" strokeLinecap="round" />
                 </svg>
-                Review SQL before execution
+                {reviewLabel}
             </Box>
 
             {isEditing ? (
                 <textarea
-                    value={editedSql}
-                    onChange={(e) => setEditedSql(e.target.value)}
+                    value={editedValue}
+                    onChange={(e: any) => setEditedValue(e.target.value)}
                     style={{
                         width: "100%",
-                        minHeight: 120,
-                        background: "#1a1a2e",
-                        color: "#a5d6ff",
-                        fontFamily: "'Fira Code', 'Consolas', monospace",
+                        minHeight: isPlan ? 160 : 120,
+                        background: isPlan ? "#fafbfc" : "#1a1a2e",
+                        color: isPlan ? "#1e293b" : "#a5d6ff",
+                        fontFamily: isPlan ? "inherit" : "'Fira Code', 'Consolas', monospace",
                         fontSize: "0.65rem",
                         lineHeight: 1.6,
                         border: "1px solid #1976d2",
@@ -77,23 +85,26 @@ function HitlCheckpointCard({
                         padding: "10px 12px",
                         resize: "vertical",
                         outline: "none",
-                        boxSizing: "border-box",
+                        boxSizing: "border-box" as const,
                     }}
                 />
             ) : (
                 <Box sx={{
-                    bgcolor: "#1a1a2e", color: "#a5d6ff", p: 1.25,
+                    bgcolor: isPlan ? "#f8fafc" : "#1a1a2e",
+                    color: isPlan ? "#334155" : "#a5d6ff",
+                    p: 1.25,
                     borderRadius: "6px", fontSize: "0.65rem",
-                    fontFamily: "'Fira Code', 'Consolas', monospace",
+                    fontFamily: isPlan ? "inherit" : "'Fira Code', 'Consolas', monospace",
                     lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    maxHeight: 180, overflowY: "auto",
+                    maxHeight: 220, overflowY: "auto",
+                    border: isPlan ? "1px solid #e2e8f0" : "none",
                     "&::-webkit-scrollbar": { width: "4px", height: "4px" },
                     "&::-webkit-scrollbar-thumb": { bgcolor: "#444", borderRadius: "4px" },
                 }}>
                     <Box sx={{ fontSize: "0.58rem", color: "#6b7280", mb: 0.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        SQL Query
+                        {label}
                     </Box>
-                    {sql}
+                    {value}
                 </Box>
             )}
 
@@ -106,14 +117,14 @@ function HitlCheckpointCard({
                         <path d="M5 1L1 9h8L5 1z" stroke="#f59e0b" strokeWidth="1" fill="none" strokeLinejoin="round" />
                         <path d="M5 4v2M5 7.5v.5" stroke="#f59e0b" strokeWidth="1" strokeLinecap="round" />
                     </svg>
-                    Editing SQL will be logged for training data
+                    {warningLabel}
                 </Box>
             )}
 
             <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.75, mt: 0.5 }}>
                 {isEditing ? (
                     <Box
-                        onClick={() => { setEditedSql(sql); setIsEditing(false); }}
+                        onClick={() => { setEditedValue(value); setIsEditing(false); }}
                         sx={{
                             px: 1.5, py: 0.6, borderRadius: "20px",
                             fontSize: "0.65rem", fontWeight: 600,
@@ -143,7 +154,7 @@ function HitlCheckpointCard({
                 )}
 
                 <Box
-                    onClick={() => onContinue(sql, isEditing ? editedSql : sql, isEditing && editedSql !== sql)}
+                    onClick={() => onContinue(checkpointType, value, isEditing ? editedValue : value, isEditing && editedValue !== value)}
                     sx={{
                         width: 28, height: 28, borderRadius: "50%",
                         bgcolor: "#1976d2",
@@ -502,13 +513,14 @@ export default function ChatBox({ chatMessages, onHitlContinue }: ChatBoxProps) 
                             );
                         })()}
 
-                        {/* ── hitl_checkpoint: SQL review with edit/continue buttons ── */}
-                        {msg.type === "hitl_checkpoint" && msg.sql && (
+                        {/* ── hitl_checkpoint: plan or SQL review with edit/continue buttons ── */}
+                        {msg.type === "hitl_checkpoint" && msg.hitlValue && msg.checkpointType && (
                             <HitlCheckpointCard
-                                sql={msg.sql}
+                                checkpointType={msg.checkpointType}
+                                value={msg.hitlValue}
                                 status={msg.hitlStatus ?? "pending"}
-                                onContinue={(orig, approved, edited) =>
-                                    onHitlContinue?.(orig, approved, edited)
+                                onContinue={(cpType, orig, approved, edited) =>
+                                    onHitlContinue?.(cpType, orig, approved, edited)
                                 }
                             />
                         )}

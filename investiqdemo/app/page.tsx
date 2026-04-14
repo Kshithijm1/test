@@ -135,6 +135,8 @@ export interface ChatMessage {
     sql?: string;
     threadId?: string;
     hitlStatus?: "pending" | "approved";
+    checkpointType?: "plan" | "sql";
+    hitlValue?: string;
 }
 
 
@@ -282,6 +284,7 @@ export default function Home() {
                 },
 
                 onHitl: (payload) => {
+                    console.log("[page] HITL checkpoint:", payload.checkpoint_type, "thread:", payload.thread_id);
                     hitlThreadIdRef.current = payload.thread_id;
                     flushSync(() => {
                         setChatMessages((prev) => [
@@ -289,7 +292,8 @@ export default function Home() {
                             {
                                 type: "hitl_checkpoint",
                                 text: "",
-                                sql: payload.sql,
+                                checkpointType: payload.checkpoint_type,
+                                hitlValue: payload.value,
                                 threadId: payload.thread_id,
                                 hitlStatus: "pending",
                             },
@@ -410,28 +414,31 @@ export default function Home() {
 
 
     const handleHitlContinue = useCallback(async (
-        originalSql: string,
-        approvedSql: string,
+        checkpointType: "plan" | "sql",
+        originalValue: string,
+        approvedValue: string,
         wasEdited: boolean,
     ) => {
         const threadId = hitlThreadIdRef.current;
         if (!threadId) return;
 
-        if (wasEdited) {
+        // Log SQL corrections for training
+        if (wasEdited && checkpointType === "sql") {
             fetch("/api/training-log", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     query: currentQueryRef.current,
-                    original_sql: originalSql,
-                    corrected_sql: approvedSql,
+                    original_sql: originalValue,
+                    corrected_sql: approvedValue,
                 }),
             }).catch(console.error);
         }
 
+        // Mark this checkpoint as approved
         flushSync(() => {
             setChatMessages((prev) => prev.map((m) =>
-                m.type === "hitl_checkpoint" && m.threadId === threadId
+                m.type === "hitl_checkpoint" && m.threadId === threadId && m.hitlStatus === "pending"
                     ? { ...m, hitlStatus: "approved" }
                     : m
             ));
@@ -447,7 +454,8 @@ export default function Home() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     thread_id: threadId,
-                    approved_sql: approvedSql,
+                    checkpoint_type: checkpointType,
+                    approved_value: approvedValue,
                     was_edited: wasEdited,
                 }),
             });
@@ -497,7 +505,25 @@ export default function Home() {
                     });
                 },
                 onDisplay: (modules) => { modules.forEach(toolHandlers); },
-                onHitl: () => {},
+                onHitl: (payload) => {
+                    // Second checkpoint (SQL review after plan approval)
+                    console.log("[page] Second HITL checkpoint:", payload.checkpoint_type);
+                    hitlThreadIdRef.current = payload.thread_id;
+                    flushSync(() => {
+                        setChatMessages((prev) => [
+                            ...prev.filter((m) => m.type !== "thinking"),
+                            {
+                                type: "hitl_checkpoint",
+                                text: "",
+                                checkpointType: payload.checkpoint_type,
+                                hitlValue: payload.value,
+                                threadId: payload.thread_id,
+                                hitlStatus: "pending",
+                            },
+                        ]);
+                    });
+                    setIsLoading(false);
+                },
             });
         } catch (error) {
             const isAbort = error instanceof DOMException && error.name === "AbortError";
@@ -510,7 +536,6 @@ export default function Home() {
             });
         } finally {
             setIsLoading(false);
-            hitlThreadIdRef.current = null;
         }
     }, [tryBuildChart, toolHandlers]);
 

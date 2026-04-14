@@ -6,7 +6,8 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-	const { prompt } = await req.json();
+	const body = await req.json();
+	const { prompt } = body;
 
 	if (!prompt?.trim()) {
 		return new Response(JSON.stringify({ error: "Prompt is required" }), {
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
 	// and prevents the frontend from showing real-time "thinking" spinners.
 	const stream = new ReadableStream({
 		start(controller) {
-			const postData = JSON.stringify({ prompt });
+			const postData = JSON.stringify(body);
 			const options: http.RequestOptions = {
 				hostname: url.hostname,
 				port: url.port || 8000,

@@ -53,7 +53,8 @@ export interface HitlChunk {
 	type: "hitl";
 	data: {
 		thread_id: string;
-		sql: string;
+		checkpoint_type: "plan" | "sql";
+		value: string;
 	};
 }
 
@@ -65,7 +66,7 @@ export interface StreamHandlers {
 	onDisplay: (modules: DisplayModule[]) => void;
 	onSqlData?: (payload: { query: string; data: Record<string, any>[] }) => void;
 	onAgentStatus?: (payload: { agent: string; status: "started" | "completed"; message: string; detail?: AgentStatusDetail }) => void;
-	onHitl?: (payload: { thread_id: string; sql: string }) => void;
+	onHitl?: (payload: { thread_id: string; checkpoint_type: "plan" | "sql"; value: string }) => void;
 }
 
 /**

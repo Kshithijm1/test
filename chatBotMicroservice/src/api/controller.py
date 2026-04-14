@@ -11,7 +11,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.types import Command
 from core.graph import agent_graph, manual_graph
 from core.state import AgentState
 from utils.helpers import LOG_CHUNK_PREVIEW, emit
@@ -28,9 +27,13 @@ AGENT_META = {
         "label": "Analysis Agent",
         "start": "Analyzing your query and building execution plan...",
     },
-    "researcher_agent": {
-        "label": "Research Agent",
-        "start": "Generating SQL and fetching data from BigQuery...",
+    "researcher_sql_gen": {
+        "label": "SQL Generation",
+        "start": "Generating SQL query from analysis plan...",
+    },
+    "researcher_sql_exec": {
+        "label": "SQL Execution",
+        "start": "Executing SQL against BigQuery...",
     },
     "response_agent": {
         "label": "Response Agent",
@@ -88,7 +91,8 @@ class ChatRequest(BaseModel):
 
 class ResumeRequest(BaseModel):
     thread_id: str
-    approved_sql: str
+    checkpoint_type: str  # "plan" or "sql"
+    approved_value: str   # the approved plan text or SQL query
     was_edited: bool = False
 
 
@@ -148,7 +152,7 @@ async def chat(req: ChatRequest):
         node_chunks: dict[str, list[str]] = {}
         
         # Ordered agent execution sequence (matches graph edges)
-        AGENT_ORDER = ["project_manager", "researcher_agent", "response_agent", "display_agent"]
+        AGENT_ORDER = ["project_manager", "researcher_sql_gen", "researcher_sql_exec", "response_agent", "display_agent"]
         next_agent_idx = 0
 
         # ── Emit "started" for the FIRST agent before loop ────────────────
@@ -220,8 +224,8 @@ async def chat(req: ChatRequest):
                         if chunk_type not in ("thinking_content", "sql_data"):
                             node_chunks.setdefault(node_name, []).append(chunk_item)
 
-                    # Emit sql_data immediately when researcher finishes
-                    if node_name == "researcher_agent":
+                    # Emit sql_data immediately when researcher_sql_exec finishes
+                    if node_name == "researcher_sql_exec":
                         sql_query = node_state.get("SQLQuery", "")
                         sql_data = node_state.get("SQLData", "")
                         if sql_query or sql_data:
@@ -257,27 +261,39 @@ async def chat(req: ChatRequest):
         # ── Check if graph was interrupted (HITL checkpoint) ──────────────────
         if is_manual and thread_id:
             state_snapshot = graph.get_state(config)
-            log.info(f"[STREAM] Checking for interrupts...")
-            log.info(f"[STREAM] State next: {state_snapshot.next}")
-            
-            # Check if there are pending tasks (indicates interrupt)
-            if state_snapshot.next and len(state_snapshot.next) > 0:
-                # Graph stopped mid-execution - check for interrupt
-                if hasattr(state_snapshot, 'tasks') and state_snapshot.tasks:
-                    log.info(f"[STREAM] Found {len(state_snapshot.tasks)} pending tasks")
-                    for task in state_snapshot.tasks:
-                        log.info(f"[STREAM] Task: {task}")
-                        if hasattr(task, 'interrupts') and task.interrupts:
-                            log.info(f"[STREAM] Task has {len(task.interrupts)} interrupts")
-                            for intr in task.interrupts:
-                                log.info(f"[STREAM] Interrupt value: {intr.value if hasattr(intr, 'value') else intr}")
-                                sql = intr.value.get("sql", "") if hasattr(intr, 'value') else ""
-                                if sql:
-                                    log.info(f"[STREAM] ✓ HITL interrupt detected, emitting event")
-                                    yield emit("hitl", {"thread_id": thread_id, "sql": sql})
-                                    return  # stream ends here
+            next_nodes = state_snapshot.next  # tuple of next node names
+            log.info(f"[STREAM] Checking for interrupt_after pause...")
+            log.info(f"[STREAM] State next: {next_nodes}")
+
+            if next_nodes:
+                state_values = state_snapshot.values
+                next_node = next_nodes[0]
+                log.info(f"[STREAM] Graph paused before: {next_node}")
+
+                if next_node == "researcher_sql_gen":
+                    # Checkpoint 1: After PM — let user review the plan
+                    pm_plan = state_values.get("pm_plan", "") or state_values.get("Context", "")
+                    log.info(f"[HITL] Plan checkpoint, plan length={len(pm_plan)}")
+                    yield emit("hitl", {
+                        "thread_id": thread_id,
+                        "checkpoint_type": "plan",
+                        "value": pm_plan,
+                    })
+                    return
+
+                elif next_node == "researcher_sql_exec":
+                    # Checkpoint 2: After SQL gen — let user review the SQL
+                    sql_query = state_values.get("SQLQuery", "")
+                    log.info(f"[HITL] SQL checkpoint, sql length={len(sql_query)}")
+                    yield emit("hitl", {
+                        "thread_id": thread_id,
+                        "checkpoint_type": "sql",
+                        "value": sql_query,
+                    })
+                    return
+
                 else:
-                    log.info(f"[STREAM] No tasks attribute on state snapshot")
+                    log.warning(f"[HITL] Unexpected paused node: {next_node}")
             else:
                 log.info(f"[STREAM] No pending next nodes - graph completed normally")
 
@@ -303,7 +319,13 @@ def _build_agent_summary(node_name: str, node_state: dict) -> str:
                 parts.append(f"{label}: {m.group(1).strip()}")
         return " | ".join(parts) if parts else "Execution plan ready"
 
-    if node_name == "researcher_agent":
+    if node_name == "researcher_sql_gen":
+        sql = node_state.get("SQLQuery", "")
+        if sql:
+            return f"SQL query generated ({len(sql)} chars)"
+        return "SQL generation completed"
+
+    if node_name == "researcher_sql_exec":
         sql_data = node_state.get("SQLData", "")
         try:
             rows = json.loads(sql_data) if sql_data else []
@@ -333,7 +355,13 @@ def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
             return {"plan_summary": plan.strip()}
         return None
 
-    if node_name == "researcher_agent":
+    if node_name == "researcher_sql_gen":
+        sql_query = node_state.get("SQLQuery", "")
+        if sql_query:
+            return {"sql": sql_query}
+        return None
+
+    if node_name == "researcher_sql_exec":
         detail: dict = {}
         sql_query = node_state.get("SQLQuery", "")
         if sql_query:
@@ -364,24 +392,51 @@ def _build_agent_detail(node_name: str, node_state: dict) -> dict | None:
 
 @router.post("/chat/resume")
 async def chat_resume(req: ResumeRequest):
-    """Resume a HITL-paused graph after human SQL review."""
+    """Resume a HITL-paused graph after human review of plan or SQL."""
     config = {"configurable": {"thread_id": req.thread_id}}
 
+    log.info(f"[RESUME] ========================================")
+    log.info(f"[RESUME] Thread: {req.thread_id}")
+    log.info(f"[RESUME] Checkpoint type: {req.checkpoint_type}")
+    log.info(f"[RESUME] Was edited: {req.was_edited}")
+    log.info(f"[RESUME] ========================================")
+
+    # If the user edited the value, update the graph state before resuming
+    if req.was_edited:
+        if req.checkpoint_type == "plan":
+            manual_graph.update_state(config, {"pm_plan": req.approved_value, "Context": req.approved_value})
+            log.info("[RESUME] Updated pm_plan + Context in graph state")
+        elif req.checkpoint_type == "sql":
+            manual_graph.update_state(config, {"SQLQuery": req.approved_value})
+            log.info("[RESUME] Updated SQLQuery in graph state")
+
     async def generate() -> AsyncGenerator[str, None]:
-        # Researcher was already shown as "started" before the interrupt.
-        # After resume: researcher finishes → response_agent → display_agent.
-        # next_agent_idx = 2 means response_agent is the next "started" to emit.
-        AGENT_ORDER = ["project_manager", "researcher_agent", "response_agent", "display_agent"]
-        next_agent_idx = 2
+        AGENT_ORDER = ["project_manager", "researcher_sql_gen", "researcher_sql_exec", "response_agent", "display_agent"]
+
+        # Determine where we are in the agent sequence based on checkpoint type
+        if req.checkpoint_type == "plan":
+            # After plan approval: sql_gen is next to run
+            next_agent_idx = 1  # researcher_sql_gen
+        else:
+            # After SQL approval: sql_exec is next to run
+            next_agent_idx = 2  # researcher_sql_exec
+
+        # Emit "started" for the next agent about to run
+        if next_agent_idx < len(AGENT_ORDER):
+            meta = AGENT_META[AGENT_ORDER[next_agent_idx]]
+            yield emit("agent_status", {
+                "agent": meta["label"],
+                "status": "started",
+                "message": meta["start"],
+            })
+            await asyncio.sleep(0.5)
+            next_agent_idx += 1
+
         node_chunks: dict[str, list[str]] = {}
 
         try:
-            async for chunk in manual_graph.astream(
-                Command(resume={"approved_sql": req.approved_sql, "was_edited": req.was_edited}),
-                config=config,
-            ):
-                if "__interrupt__" in chunk:
-                    continue  # should not happen after first resume
+            async for chunk in manual_graph.astream(None, config=config):
+                log.info(f"[RESUME] Chunk keys: {list(chunk.keys())}")
 
                 for node_name, node_state in chunk.items():
                     if node_name not in AGENT_META:
@@ -419,7 +474,7 @@ async def chat_resume(req: ResumeRequest):
                         if chunk_type not in ("thinking_content", "sql_data"):
                             node_chunks.setdefault(node_name, []).append(chunk_item)
 
-                    if node_name == "researcher_agent":
+                    if node_name == "researcher_sql_exec":
                         sql_query = node_state.get("SQLQuery", "")
                         sql_data = node_state.get("SQLData", "")
                         if sql_query or sql_data:
@@ -445,6 +500,28 @@ async def chat_resume(req: ResumeRequest):
             yield json.dumps({"type": "response_content", "data": "Something went wrong on resume."}) + "\n"
             return
 
+        # ── Check if another interrupt was hit (plan resume → SQL checkpoint) ──
+        state_snapshot = manual_graph.get_state(config)
+        next_nodes = state_snapshot.next
+        log.info(f"[RESUME] Post-stream next nodes: {next_nodes}")
+
+        if next_nodes:
+            state_values = state_snapshot.values
+            next_node = next_nodes[0]
+
+            if next_node == "researcher_sql_exec":
+                sql_query = state_values.get("SQLQuery", "")
+                log.info(f"[RESUME-HITL] SQL checkpoint after plan resume, sql length={len(sql_query)}")
+                yield emit("hitl", {
+                    "thread_id": req.thread_id,
+                    "checkpoint_type": "sql",
+                    "value": sql_query,
+                })
+                return
+            else:
+                log.warning(f"[RESUME-HITL] Unexpected paused node: {next_node}")
+
+        # ── Flush final chunks in type order ─────────────────────────────────
         TYPE_ORDER = {"response_content": 0, "display_modules": 1}
         all_final = [c for chunks in node_chunks.values() for c in chunks]
         all_final.sort(key=lambda c: TYPE_ORDER.get(json.loads(c).get("type", "") if c.strip() else "", 99))
