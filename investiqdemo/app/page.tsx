@@ -259,6 +259,9 @@ export default function Home() {
         try {
             currentQueryRef.current = prompt;
 
+            console.log("[handleSubmit] Current mode:", mode);
+            console.log("[handleSubmit] Sending to backend:", { prompt, mode });
+
             const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -621,8 +624,10 @@ export default function Home() {
                             <Box
                                 key={m}
                                 onClick={() => {
+                                    console.log("[Mode Toggle] Switching to:", m);
                                     setMode(m);
                                     localStorage.setItem("chatMode", m);
+                                    console.log("[Mode Toggle] localStorage updated to:", m);
                                 }}
                                 sx={{
                                     px: 1.25,
