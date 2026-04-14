@@ -110,6 +110,12 @@ async def chat(req: ChatRequest):
     graph = manual_graph if is_manual else agent_graph
     thread_id = str(uuid.uuid4()) if is_manual else None
     config = {"configurable": {"thread_id": thread_id}} if thread_id else {}
+    
+    log.info(f"[CHAT] ========================================")
+    log.info(f"[CHAT] Mode: {req.mode}, is_manual: {is_manual}")
+    log.info(f"[CHAT] Using graph: {'manual_graph' if is_manual else 'agent_graph'}")
+    log.info(f"[CHAT] Thread ID: {thread_id}")
+    log.info(f"[CHAT] ========================================")
 
     async def generate() -> AsyncGenerator[str, None]:
         initial_state: AgentState = {
