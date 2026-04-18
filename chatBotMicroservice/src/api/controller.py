@@ -14,6 +14,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from core.graph import agent_graph, manual_graph
 from core.state import AgentState
 from utils.helpers import LOG_CHUNK_PREVIEW, emit
+from utils.sql_guardrails import validate_sql, validate_plan_text, SQLGuardrailError
 
 TRAINING_LOG_PATH = Path(__file__).parent.parent / "data" / "training_log.jsonl"
 TRAINING_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -404,11 +405,23 @@ async def chat_resume(req: ResumeRequest):
     # If the user edited the value, update the graph state before resuming
     if req.was_edited:
         if req.checkpoint_type == "plan":
+            # ── Hard guardrail: reject plan text containing embedded SQL ──────
+            try:
+                validate_plan_text(req.approved_value, context="HITL plan")
+            except SQLGuardrailError as e:
+                log.error(f"[RESUME] Plan guardrail blocked user-edited plan: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
             manual_graph.update_state(config, {"pm_plan": req.approved_value, "Context": req.approved_value})
-            log.info("[RESUME] Updated pm_plan + Context in graph state")
+            log.info("[RESUME] Updated pm_plan + Context in graph state (guardrail passed)")
         elif req.checkpoint_type == "sql":
+            # ── Hard guardrail: reject any mutating SQL before it enters state ──
+            try:
+                validate_sql(req.approved_value, context="HITL resume")
+            except SQLGuardrailError as e:
+                log.error(f"[RESUME] SQL guardrail blocked user-edited query: {e}")
+                raise HTTPException(status_code=400, detail=str(e))
             manual_graph.update_state(config, {"SQLQuery": req.approved_value})
-            log.info("[RESUME] Updated SQLQuery in graph state")
+            log.info("[RESUME] Updated SQLQuery in graph state (guardrail passed)")
 
     async def generate() -> AsyncGenerator[str, None]:
         AGENT_ORDER = ["project_manager", "researcher_sql_gen", "researcher_sql_exec", "response_agent", "display_agent"]

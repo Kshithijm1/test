@@ -4,7 +4,8 @@ import time
 from langchain_core.messages import HumanMessage
 from core.state import AgentState
 from utils.tools import TOOL_MAP
-from utils.helpers import log
+from utils.helpers import log, emit
+from utils.sql_guardrails import validate_sql, SQLGuardrailError
 
 
 def researcher_sql_gen(state: AgentState) -> AgentState:
@@ -96,6 +97,22 @@ def researcher_sql_exec(state: AgentState) -> AgentState:
         log.warning("[RESEARCHER-EXEC] No SQL query in state — skipping execution")
         return {"messages": [], "stream_chunks": [], "data_fetched": False, "SQLData": "", "df50": ""}
 
+    # ── Hard guardrail: block any mutating SQL before it reaches BigQuery ──────
+    try:
+        validate_sql(clean_sql, context="sql_exec")
+    except SQLGuardrailError as e:
+        log.error(f"[RESEARCHER-EXEC] SQL guardrail blocked query: {e}")
+        return {
+            "messages": [],
+            "stream_chunks": [emit("response_content",
+                "This query was blocked by a security guardrail because it contains "
+                "a write operation. Only read-only SELECT queries are permitted."
+            )],
+            "data_fetched": False,
+            "SQLData": "",
+            "df50": "",
+        }
+
     log.info(f"[RESEARCHER-EXEC] Executing SQL:\n{clean_sql[:300]}...")
 
     try:
@@ -127,7 +144,6 @@ def researcher_sql_exec(state: AgentState) -> AgentState:
 
         log.info(f"[RESEARCHER-EXEC] Done in {elapsed:.2f}s | {len(data_rows)} rows | df50={len(df50_rows)} rows")
 
-        from utils.helpers import emit
         data_chunk = emit("sql_data", {"query": clean_sql, "data": data_rows})
 
         return {
